@@ -1,0 +1,17 @@
+== AFTER FIX (48b2f20), tasks-axi 0.2.6 ==
+-- tests/zz-tmp-hold.test.sh
+ok - recording the inventory keeps an armed PR poll readable
+-- tests/zz-tmp-prc.test.sh
+ok - later metadata keys keep an armed PR poll valid while malformed tails still refuse
+
+== BEFORE FIX (base c643b57 bin/fm-pr-lib.sh) ==
+-- tests/zz-tmp-hold.test.sh
+pr=https://github.com/o/r/pull/7
+pr_head=0123456789abcdef0123456789abcdef01234567
+decisions_reviewed=1
+decision_keys=sample-ship-call
+-- tests/zz-tmp-prc.test.sh
+pr_head=0123456789abcdef0123456789abcdef01234567
+control_relaunch_tx=tx-1
+traceparent=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+spawn_gen=s1.2.3

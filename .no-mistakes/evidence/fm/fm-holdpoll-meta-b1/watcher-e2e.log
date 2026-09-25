@@ -1,0 +1,23 @@
+== AFTER FIX (48b2f20) ==
+--- state/task-a.meta after captain complete-style append ---
+window=fm-task-a
+worktree=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.RFHKGJ/e2e-decision-append/wt
+pr=https://github.com/o/r/pull/1
+decisions_reviewed=1
+decision_keys=sample-ship-call
+--- fm-watch.sh rc=0 stdout ---
+check: /private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.RFHKGJ/e2e-decision-append/home/state/task-a.check.sh: merged
+--- stderr ---
+ok - watcher detects merged PR after decision keys appended
+
+== BEFORE FIX (base c643b57 fm-pr-lib.sh) ==
+--- state/task-a.meta after captain complete-style append ---
+window=fm-task-a
+worktree=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.2c8I3U/e2e-decision-append/wt
+pr=https://github.com/o/r/pull/1
+decisions_reviewed=1
+decision_keys=sample-ship-call
+--- fm-watch.sh rc=0 stdout ---
+check: /private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.2c8I3U/e2e-decision-append/home/state/z-stop.check.sh: stop-cycle
+--- stderr ---
+not ok - watcher did not detect the merged PR
