@@ -120,7 +120,9 @@
 # what a pane shows once its agent has exited to a plain login shell - is a
 # genuine empty agent composer ONLY inside a bordered container. On a bare row
 # it is a dead-shell prompt and classifies `unknown` (never a safe injection
-# target). The AGENT glyphs `❯` (claude), `›` (codex), `⟩` (U+27E9, muse),
+# target). A `$` followed immediately by a digit is Pi's cost footer, not this
+# prompt (`FM_COMPOSER_PI_STATUS_RE_DEFAULT`).
+# The AGENT glyphs `❯` (claude), `›` (codex), `⟩` (U+27E9, muse),
 # `→` (U+2192, cursor), and `❭` (U+276D, devin) are a genuine empty agent
 # composer either way.
 # Both glyph sets are declared
@@ -499,6 +501,13 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # a middle dot. It is consulted only as the boundary BELOW a bare composer,
 # never on the composer row itself.
 FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:]]|^[[:space:]]*'"$FM_OMP_SPINNER_FRAMES_RE"'[[:space:]]+[0-9]+[smh]([[:space:]]|$)|[[:space:]]·[[:space:]].*[0-9]+(\.[0-9]+)?%/[0-9]+K'
+# Pi's footer stats row opens at column 0 with the session cost when every
+# token counter is zero (`$0.000 (sub) 5.4%/272k (auto)` on pi 0.85.1).
+# That leading `$` is a cost cell, not a dead-shell prompt, only when a digit
+# follows it immediately; `$` then whitespace stays a prompt.
+# Consulted only as the dead-shell exception below, never as composer content,
+# so the same string typed between the separator pair still reads pending.
+FM_COMPOSER_PI_STATUS_RE_DEFAULT='^\$[0-9]+(\.[0-9]+)?([[:space:]]|$)'
 # Braille-pattern cells (U+2800..U+28FF) are animation furniture: codex-cli
 # 0.154.0 draws an idle "starfield" of them on the row above its `›` prompt
 # row, on the `›` row itself after the dim `Ask Codex to do anything`
@@ -537,11 +546,12 @@ fm_composer_strip_braille() {
   '
 }
 
-# The bounded row window adapters should capture for a composer read. One
-# shared policy (previously three per-backend variables that had drifted to
-# 20/20/200): the composer is bottom-anchored, so a small tail window is
-# sufficient and keeps stale scrollback (startup banners, old transcript
-# boxes) from ever competing with the live composer.
+# The bounded row window for adapters that use tail-capture composer reads and
+# for the shared inbox confirmation read. One shared policy (previously three
+# per-backend variables that had drifted to 20/20/200) keeps stale scrollback
+# (startup banners, old transcript boxes) out of those candidate sets. tmux
+# and Herdr adapter composer reads use their visible viewports instead; Herdr
+# also uses this value as the minimum Ctrl+U clear budget after a refused proof.
 FM_COMPOSER_CAPTURE_LINES=${FM_COMPOSER_CAPTURE_LINES:-20}
 
 # Pi allows a multi-line composer between its horizontal separators. Bound the
@@ -752,6 +762,37 @@ _fm_composer_pi_separator_row() {  # <trimmed-row>
   return 1
 }
 
+# _fm_composer_titled_rule_row: 0 when a trimmed row is a composer rule with a
+# session title burned into it (Claude Code draws a named session's title into
+# its composer's TOP rule: `──────── <name> ─`, issues #5601 and #5558), proven
+# by collapsing to exactly the column width of <plain-rule-spaces>, the partner
+# closing rule already mapped to spaces.
+#
+# This is deliberately NOT a relaxation of _fm_composer_pi_separator_row, and
+# the two must not be merged: that predicate also feeds the pi identity
+# conjunction, so it stays strictly dashes-only. This one has the single
+# consumer _fm_composer_bare_rule_sandwich.
+#
+# The row must OPEN with the same 8-column dash run the strict separator
+# requires. Width is proven by comparing canonical space strings, never by
+# `${#row}`, which counts characters under UTF-8 and bytes under LC_ALL=C
+# (issue #1988). Title text is ASCII-printable only, the same boundary
+# _fm_composer_titled_bottom_ok holds; any other glyph leaves residue, and the
+# verdict stays `unknown`, the safe direction.
+_fm_composer_titled_rule_row() {  # <trimmed-row> <plain-rule-spaces>
+  local row=$1 expected=$2 spaces
+  case "$row" in
+    ────────*) ;;
+    *) return 1 ;;
+  esac
+  spaces=${row//─/ }
+  spaces=$(printf '%s' "$spaces" | LC_ALL=C sed 's/[!-~]/ /g')
+  case "$spaces" in
+    *[![:space:]]*) return 1 ;;
+  esac
+  [ "$spaces" = "$expected" ]
+}
+
 # Row-scan results are returned through FM_COMPOSER_SCAN_* globals (bash 3.2
 # has no nameref); they are internal to this owner.
 _fm_composer_scan_screen() {  # <plain-screen> <cursor-or-empty> [extract-wrap]
@@ -883,7 +924,9 @@ _fm_composer_scan_screen() {  # <plain-screen> <cursor-or-empty> [extract-wrap]
     # Bare agent-glyph rows: the glyph itself is the container proof. Bare
     # shell glyphs are deliberately not candidates (dead-shell rule). Keep
     # lower shell prompts as staleness evidence for cursorless selection.
-    if [ "$top" -lt 0 ] && fm_composer_leading_shell_glyph_var glyph "$trimmed"; then
+    # Pi's cost footer can open with `$0.000`; that is furniture, not a prompt.
+    if [ "$top" -lt 0 ] && fm_composer_leading_shell_glyph_var glyph "$trimmed" \
+       && ! _fm_composer_row_is_pi_status "$trimmed"; then
       FM_COMPOSER_SCAN_SHELL_ROW=$row
     elif fm_composer_leading_agent_glyph_var glyph "$trimmed"; then
       FM_COMPOSER_SCAN_BARE_ROW=$row
@@ -1190,6 +1233,13 @@ _fm_composer_row_is_omp_status() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "${FM_COMPOSER_OMP_STATUS_RE:-$FM_COMPOSER_OMP_STATUS_RE_DEFAULT}" sensitive
 }
 
+# _fm_composer_row_is_pi_status: 0 when the trimmed row is Pi's dollar-first
+# footer stats row (FM_COMPOSER_PI_STATUS_RE_DEFAULT above). Furniture below
+# the separated pair; a `$` cost cell must not count as a dead-shell prompt.
+_fm_composer_row_is_pi_status() {  # <trimmed-row>
+  fm_composer_idle_matches "$1" "$FM_COMPOSER_PI_STATUS_RE_DEFAULT" sensitive
+}
+
 # _fm_composer_row_is_braille_furniture: 0 when the row is non-blank and its
 # non-whitespace content is entirely braille cells (fm_composer_strip_braille
 # above) - an animation row that never counts as typed content and bounds a
@@ -1409,6 +1459,28 @@ _fm_composer_locate_footer_zone() {  # <plain>
     && [ "$FM_COMPOSER_SCAN_BARE_ROW" -le "$FM_COMPOSER_FOOTER_LAST" ]
 }
 
+# _fm_composer_bare_rule_sandwich: 0 when bare agent-glyph <row> sits in its
+# own titled composer: a titled rule directly above it and the screen's only
+# unmatched separator directly below it, which is that composer's closing rule.
+#
+# The cursorless staleness rule reads an unmatched separator BELOW a candidate
+# as proof the candidate is scrollback. A titled top rule never opens the
+# separator pair, so the composer's own closing rule becomes that unmatched
+# separator and a genuinely idle composer read `unknown`. Adjacency on BOTH
+# edges keeps the staleness rule intact everywhere else: a glyph stranded in
+# scrollback has transcript rows, not its own rules, around it.
+_fm_composer_bare_rule_sandwich() {  # <plain-screen> <row>
+  local plain=$1 row=$2 above below
+  [ "$row" -ge 1 ] || return 1
+  [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -eq "$((row + 1))" ] || return 1
+  below=$(_fm_composer_screen_row "$((row + 1))" "$plain")
+  fm_composer_normalize_trim_var below
+  _fm_composer_pi_separator_row "$below" || return 1
+  above=$(_fm_composer_screen_row "$((row - 1))" "$plain")
+  fm_composer_normalize_trim_var above
+  _fm_composer_titled_rule_row "$above" "${below//─/ }"
+}
+
 _fm_composer_select_cursorless() {
   local plain=$1 generic=-1 next boundary raw trimmed glyph bare footer=0
   FM_COMPOSER_SELECTED_KIND=
@@ -1464,8 +1536,14 @@ _fm_composer_select_cursorless() {
   fi
   if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 0 ] \
      && [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -gt "$generic" ]; then
-    FM_COMPOSER_SELECTED_KIND=
-    return 1
+    # Spare only a bare glyph inside its own titled composer rules; see
+    # _fm_composer_bare_rule_sandwich for why that shape is not scrollback.
+    if ! { [ "$FM_COMPOSER_SELECTED_KIND" = bare ] \
+           && [ "$generic" = "$FM_COMPOSER_SCAN_BARE_ROW" ] \
+           && _fm_composer_bare_rule_sandwich "$plain" "$FM_COMPOSER_SCAN_BARE_ROW"; }; then
+      FM_COMPOSER_SELECTED_KIND=
+      return 1
+    fi
   fi
   if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$generic" ]; then
     FM_COMPOSER_SELECTED_KIND=
