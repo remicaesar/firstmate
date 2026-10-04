@@ -1,0 +1,13 @@
+$ /bin/bash --version
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+
+== merged upstream (ad1d08c3) lib: direct fm_exec_timed call under set -u ==
+/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/tmp.tCoLpOeWUh/broken-lib.sh: line 224: BASHPID: unbound variable
+exit=127
+
+== fixed (51e186bb) lib: same call ==
+command ran under bash 3.2.57(1)-release
+exit=0
+
+== fixed lib: 1s bound on sleep 10 (timeout still enforced) ==
+exit=124 elapsed=1s

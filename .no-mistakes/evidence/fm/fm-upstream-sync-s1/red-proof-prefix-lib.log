@@ -1,0 +1,1 @@
+not ok - a direct fm_exec_timed call under set -u did not report the command's status (rc=127, out=/Users/emirmuratsezer/.no-mistakes/worktrees/bf0faa575906/01M43MJAD5WDJAGCXE01KQQGA6/bin/fm-timeout-lib.sh: line 224: BASHPID: unbound variable)

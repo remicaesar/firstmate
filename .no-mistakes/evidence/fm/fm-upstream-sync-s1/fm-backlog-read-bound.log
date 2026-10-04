@@ -1,0 +1,11 @@
+ok - a hanging tasks-axi show returns within the per-item bound instead of running unbounded
+ok - a timed-out row read reports one error naming the item that timed out
+ok - after the first bound hit the sweep continues and names every remaining item without paying the bound again
+ok - a padded-zero bound falls back to the default instead of disabling the deadline
+ok - a bound hit stops a captain hold loudly instead of being read as a missing task
+ok - the teardown verify gate reports a bound hit by name instead of as an absent inventory entry
+ok - the reconcile-requests intake stops loudly on a bound hit instead of refusing the row as absent
+ok - a bound hit in the migrated-prefix scan stops verify by name instead of resolving to nothing
+ok - a wedged backlog backend still leaves a complete digest: wake queue, supervision instructions, fleet state, and context all print
+ok - an unreachable backlog backend degrades to a loud partial reconcile naming the item it could not read
+# fm-backlog-read-bound.test.sh: all assertions passed
