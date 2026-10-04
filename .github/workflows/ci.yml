@@ -503,6 +503,18 @@ jobs:
             exit 1
           }
 
+          # fm_exec_timed must run when called directly under set -u, where
+          # stock Bash 3.2 has no BASHPID, and still watch the shell's parent.
+          timeout_output=$(FM_TEST_ONLY="test_a_direct_call_under_set_u_runs_the_command test_a_direct_caller_whose_parent_dies_during_startup_ends_the_command" \
+            FM_TEST_BASH=/bin/bash \
+            /bin/bash tests/fm-timeout-lib.test.sh)
+          printf '%s\n' "$timeout_output"
+          timeout_count=$(printf '%s\n' "$timeout_output" | grep -c '^ok - ')
+          [ "$timeout_count" -eq 2 ] || {
+            echo "::error::expected 2 fm_exec_timed bash 3.2 regressions, got $timeout_count"
+            exit 1
+          }
+
   invariants:
     name: Repo invariants
     runs-on: ubuntu-latest
