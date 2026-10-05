@@ -1,0 +1,31 @@
+### bin/fm-pr-lib.sh at FIX (7b6fea5)
+ok - later metadata keys keep an armed PR poll valid while malformed tails still refuse
+rc=0
+ok - recording the inventory keeps an armed PR poll readable
+rc=0
+
+### bin/fm-pr-lib.sh reverted to BASE (f470a01), tests unchanged
+not ok - later metadata keys made the armed poll invalid: window=firstmate:fm-task-a
+endpoint_task_id=task-a
+worktree=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.a5dSPZ/later-metadata-keys/wt
+project=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-check-security.a5dSPZ/later-metadata-keys/project
+kind=ship
+mode=no-mistakes
+pr=https://github.com/o/r/pull/5
+pr_head=0123456789abcdef0123456789abcdef01234567
+control_relaunch_tx=tx-1
+traceparent=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+spawn_gen=s1.2.3
+rc=1
+not ok - recording the inventory made the armed PR poll unreadable: window=firstmate:fm-sample-armed-ship
+worktree=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-captain-hold.y2LPOD/armed-pr-poll/projects/missing-sample-armed-ship
+project=/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-captain-hold.y2LPOD/armed-pr-poll/projects/sample
+harness=codex
+kind=ship
+mode=ship
+spawn_gen=fixture-sample-armed-ship
+pr=https://github.com/o/r/pull/7
+pr_head=0123456789abcdef0123456789abcdef01234567
+decisions_reviewed=1
+decision_keys=sample-ship-call
+rc=1
