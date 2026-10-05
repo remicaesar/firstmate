@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavior tests for bin/fm-timeout-lib.sh's exec-style bound, fm_exec_timed:
+# Behavior tests for bin/fm-timeout-lib.sh's bounds, fm_exec_timed and fm_run_timed:
 # TERM to the command's process group at the bound, KILL once the grace has
 # passed, a forwarded signal, the caller replaced rather than wrapped, and a
 # refusal instead of an unbounded run when nothing on the host can enforce the
@@ -13,6 +13,10 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-timeout-lib)
+
+# The shell the direct-call cases run fm_exec_timed in; CI's stock macOS Bash
+# lane points it at /bin/bash 3.2.
+TEST_BASH=${FM_TEST_BASH:-${BASH:-bash}}
 
 # A PATH with perl and the shell tools the bounded commands use, and no
 # timeout variant: fm_exec_timed must take its perl watchdog here.
@@ -31,6 +35,18 @@ exec_timed() {
   (
     . "$ROOT/bin/fm-timeout-lib.sh"
     PATH=$path fm_exec_timed "$@"
+  )
+}
+
+RUN124="$TMP_ROOT/run124-bin"
+mkdir -p "$RUN124"
+printf '#!/bin/sh\nshift 3\n"$@"\nexit 124\n' > "$RUN124/timeout"
+chmod +x "$RUN124/timeout"
+
+run_timed() {
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    PATH="$RUN124:$PATH" fm_run_timed "$@"
   )
 }
 
@@ -97,7 +113,7 @@ test_the_bound_replaces_the_calling_shell() {
     rm -f "$dir/caller" "$dir/parent"
     (
       . "$ROOT/bin/fm-timeout-lib.sh"
-      printf '%s\n' "$BASHPID" > "$dir/caller"
+      perl -le 'print getppid' > "$dir/caller"
       PATH=$path fm_exec_timed 5 1 bash -c 'echo "$PPID" > "$1"' _ "$dir/parent"
     ) || fail "the bounded probe failed under PATH=$path"
     caller=$(cat "$dir/caller")
@@ -158,6 +174,116 @@ test_a_signal_to_the_bounding_process_reaches_the_command() {
   [ "$(cat "$dir/term" 2>/dev/null)" = forwarded ] || fail "the TERM never reached the bounded command"
   [ "$rc" -eq 3 ] || fail "a forwarded TERM did not report the command's own status (rc=$rc)"
   pass "fm_exec_timed forwards a TERM it receives to the bounded command"
+}
+
+# A caller that names its owner before launching the watchdog is watched even
+# when that owner died while the watchdog was still starting: the watchdog's
+# parent is then not the named owner, so the escalation starts at once rather
+# than at the bound.
+test_a_named_owner_that_is_gone_ends_the_command() {
+  local dir gone rc=0 started elapsed pid
+  dir="$TMP_ROOT/owner"
+  mkdir -p "$dir"
+  sleep 0 &
+  gone=$!
+  wait "$gone" 2>/dev/null || true
+  started=$SECONDS
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    PATH=$PERL_ONLY FM_EXEC_TIMED_OWNER_PID=$gone \
+      fm_exec_timed 60 1 bash -c 'echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
+  ) || rc=$?
+  elapsed=$((SECONDS - started))
+  [ "$elapsed" -lt 15 ] || fail "a watchdog whose named owner was gone ran to its bound (${elapsed}s)"
+  [ "$rc" -ne 0 ] || fail "a command ended by its owner's death reported success"
+  if [ -s "$dir/pid" ]; then
+    pid=$(cat "$dir/pid")
+    ! kill -0 "$pid" 2>/dev/null || fail "the bounded command outlived its named owner"
+  fi
+  pass "fm_exec_timed ends the command when its named owner is already gone"
+}
+
+# With no named owner the calling script is captured before the watchdog
+# starts, so a script that dies while its subshell is still on the way into
+# fm_exec_timed - the watchdog then starts already reparented - is still
+# detected instead of leaving the command running to its bound.
+test_an_owner_that_dies_during_startup_ends_the_command() {
+  local dir watchdog started
+  dir="$TMP_ROOT/startup-owner"
+  mkdir -p "$dir"
+  # shellcheck disable=SC2016
+  PATH=$PERL_ONLY bash -c '
+    . "$1/bin/fm-timeout-lib.sh"
+    (
+      perl -le "print getppid" > "$2/watchdog"
+      while kill -0 "$$" 2>/dev/null; do sleep 0.05; done
+      fm_exec_timed 60 1 bash -c "exec sleep 300"
+    ) >/dev/null 2>&1 &
+    exit 0
+  ' _ "$ROOT" "$dir"
+  wait_for_file "$dir/watchdog"
+  watchdog=$(cat "$dir/watchdog")
+  started=$SECONDS
+  while kill -0 "$watchdog" 2>/dev/null; do
+    if [ "$((SECONDS - started))" -ge 15 ]; then
+      kill -KILL "$watchdog" 2>/dev/null || true
+      fail "a watchdog whose owner died during startup ran on toward its bound"
+    fi
+    sleep 0.02
+  done
+  pass "fm_exec_timed ends the command when its owner dies during watchdog startup"
+}
+
+# Stock macOS Bash 3.2 has no BASHPID, so a caller that runs fm_exec_timed
+# directly in its own shell under set -u must still reach the command rather
+# than die on an unbound variable before the watchdog starts.
+test_a_direct_call_under_set_u_runs_the_command() {
+  local out rc=0
+  # shellcheck disable=SC2016
+  out=$("$TEST_BASH" -c '
+    set -u
+    . "$1/bin/fm-timeout-lib.sh"
+    PATH=$2 fm_exec_timed 5 1 bash -c "echo direct; exit 7"
+  ' _ "$ROOT" "$PERL_ONLY" 2>&1) || rc=$?
+  [ "$rc" -eq 7 ] || fail "a direct fm_exec_timed call under set -u did not report the command's status (rc=$rc, out=$out)"
+  [ "$out" = direct ] || fail "a direct fm_exec_timed call under set -u lost the command's output (out=$out)"
+  pass "fm_exec_timed runs a direct call under set -u on $("$TEST_BASH" -c 'echo "$BASH_VERSION"')"
+}
+
+# A direct caller is the process the watchdog replaces, so its owner is the
+# shell's parent captured at shell start: a parent that died while the shell
+# was still on the way into fm_exec_timed - the watchdog then starts already
+# reparented - is still detected instead of leaving the command to its bound.
+test_a_direct_caller_whose_parent_dies_during_startup_ends_the_command() {
+  local dir watchdog started
+  dir="$TMP_ROOT/direct-owner"
+  mkdir -p "$dir"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    'set -u' \
+    '. "$1/bin/fm-timeout-lib.sh"' \
+    'perl -le "print getppid" > "$2/watchdog"' \
+    'while kill -0 "$PPID" 2>/dev/null; do sleep 0.05; done' \
+    'PATH=$3 fm_exec_timed 60 1 bash -c '"'"'echo $$ > "$1"; exec sleep 300'"'"' _ "$2/pid"' \
+    > "$dir/direct.sh"
+  # shellcheck disable=SC2016
+  "$TEST_BASH" -c '"$1" "$2/direct.sh" "$3" "$2" "$4" >/dev/null 2>"$2/err" & exit 0' \
+    _ "$TEST_BASH" "$dir" "$ROOT" "$PERL_ONLY"
+  wait_for_file "$dir/watchdog"
+  watchdog=$(cat "$dir/watchdog")
+  started=$SECONDS
+  while kill -0 "$watchdog" 2>/dev/null; do
+    if [ "$((SECONDS - started))" -ge 15 ]; then
+      kill -KILL "$watchdog" 2>/dev/null || true
+      fail "a direct watchdog whose parent died during startup ran on toward its bound"
+    fi
+    sleep 0.02
+  done
+  [ ! -s "$dir/err" ] || fail "the direct caller failed before the watchdog started: $(cat "$dir/err")"
+  if [ -s "$dir/pid" ]; then
+    ! kill -0 "$(cat "$dir/pid")" 2>/dev/null || fail "the bounded command outlived the direct caller's parent"
+  fi
+  pass "fm_exec_timed ends a direct caller's command when its parent dies during watchdog startup"
 }
 
 # perl is preferred whenever it exists, because only its watchdog can reap a
@@ -242,12 +368,41 @@ test_timed_out_names_exactly_the_bound_statuses() {
   pass "fm_timed_out accepts 124 and 137 and nothing else"
 }
 
+test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death() {
+  local rc=0
+  run_timed 5 bash -c 'kill -TERM $$' || rc=$?
+  [ "$rc" -eq 124 ] || fail "a bound-killed read leaked the signal death as its own status (rc=$rc)"
+  pass 'fm_run_timed reports 124 when the bound TERMs a read whose wrapper recorded 143'
+}
+
+test_run_timed_passes_a_natural_exit_through_a_fired_bound() {
+  local out rc=0
+  out=$(run_timed 5 bash -c 'echo through') || rc=$?
+  [ "$rc" -eq 0 ] || fail "a completed read lost its own status to the fired bound (rc=$rc)"
+  [ "$out" = through ] || fail 'a completed read lost its output to the fired bound'
+  pass 'fm_run_timed passes a natural exit through when the bound fired after completion'
+}
+
+# CI's stock macOS Bash lane sets FM_TEST_ONLY to run just the bash 3.2 cases.
+if [ -n "${FM_TEST_ONLY:-}" ]; then
+  for only in $FM_TEST_ONLY; do
+    "$only"
+  done
+  exit 0
+fi
+
 test_passes_the_command_status_and_output_through
+test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death
+test_run_timed_passes_a_natural_exit_through_a_fired_bound
 test_term_ends_a_cooperative_command_at_the_bound
 test_kill_ends_a_term_ignoring_command_after_the_grace
 test_the_bound_replaces_the_calling_shell
 test_a_descendant_holding_the_output_cannot_outlast_the_bound
 test_a_signal_to_the_bounding_process_reaches_the_command
+test_a_named_owner_that_is_gone_ends_the_command
+test_an_owner_that_dies_during_startup_ends_the_command
+test_a_direct_call_under_set_u_runs_the_command
+test_a_direct_caller_whose_parent_dies_during_startup_ends_the_command
 test_perl_is_preferred_over_timeout
 test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
