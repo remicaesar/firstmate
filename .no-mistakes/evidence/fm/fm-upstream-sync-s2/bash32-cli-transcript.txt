@@ -1,0 +1,86 @@
+$ /bin/bash --version | head -1
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+$ /bin/bash bin/fm-pipeline-spend.sh
+fm-pipeline-spend.sh - attribute a task's no-mistakes pipeline spend to the
+task and keep it in Firstmate's own records.
+
+Usage:
+  fm-pipeline-spend.sh record <task-id>
+
+record appends the task's pipeline spend as one JSON object on one line of
+data/pipeline-spend.jsonl, at most once per task incarnation (task id plus
+the record's spawn_gen): repeating it for an incarnation already in the
+ledger appends nothing, so a retried cleanup never counts a task twice.
+Recording is disabled unless config/pipeline-spend is present; in that case
+this command exits before reading task metadata, no-mistakes state, or ledger.
+When enabled, bin/fm-teardown.sh calls record for every ship task whose
+local copy it cleans up, before it deletes the task branch this script
+attributes runs by and before it removes state/<id>.meta. The ledger is
+private and gitignored with the rest of data/.
+Exit status: 0 when a record was recorded or already present, its source is
+unavailable, or recording is disabled; 1 when the task record is missing,
+names a secondmate, or the record could not be built or written; 2 for bad usage.
+
+Source. no-mistakes keeps each agent invocation's token usage only in its
+local state database, one agent_invocations row per invocation; its
+environment reference documents those fields, and `no-mistakes stats --run
+<id>` renders the same rows as a human table. There is no machine-readable
+export yet, so this script reads the database read-only (mode=ro), located
+by bin/fm-nm-run-lib.sh's fm_nm_state_db, and bounded by 30 seconds per
+no-mistakes or database call.
+
+Attribution. A task's runs are the runs no-mistakes recorded for the task
+copy's repository and current branch since that branch was created:
+  - repository: the `repo:` line `no-mistakes axi` prints from the task copy,
+    which is the CLI's own resolution (a pooled worker copy resolves to the
+    registered primary clone), matched exactly against repos.working_path;
+  - branch: the task copy's current branch, the one bin/fm-crew-state.sh
+    reads;
+  - since: the oldest surviving reflog entry of that branch. spawn_gen cannot
+    bound the task, because a relaunch mints a new one while the same branch
+    keeps validating. Teardown deletes the branch, so a later task that
+    reuses the id and branch name starts a fresh reflog and never inherits an
+    earlier task's runs. With no reflog, every run on the branch counts and
+    since is null.
+Two live tasks sharing one branch name in one repository would both count
+its runs; each record lists run ids, so such an overlap stays visible.
+
+Counting. Every invocation of those runs counts, whatever its exit status
+(ok, error, cancelled), and each token field is no-mistakes' own, summed
+without reinterpretation (whether input includes cache reads differs by
+agent; see no-mistakes' environment reference):
+  - input_tokens, output_tokens, cache_read_tokens sum the per-round
+    delta_* columns, because a resumed session's raw counters are cumulative
+    for some agents (codex) and summing them would count earlier review
+    rounds again. A row with no delta (written before the delta columns
+    existed) falls back to its raw counter only when its session_mode is not
+    `resumed`, since no-mistakes defines a cold, started, or fallback row's
+    delta as its raw counter.
+  - cache_creation_tokens sums the raw counter, which has no per-round
+    delta, so it counts only for a row whose counters are proven
+    per-invocation: not resumed, or every delta equal to its raw counter.
+  - reasoning is not summed: no-mistakes counts it inside output and keeps no
+    per-round delta for it.
+A value no-mistakes did not record is unknown, never zero: each token field
+carries its known total and how many invocations were unknown, so a total
+with unknown > 0 is a lower bound.
+
+Record schema (this header is its one owner). One JSON object:
+  task, spawn_gen         the task id and the incarnation recorded in its meta
+  recorded_at             UTC time the record was built
+  source                  "no-mistakes-state", or "unavailable" when the runs
+                          could not be read; reason then says why, total
+                          is null, and runs and purposes are empty
+  repo, branch, since     the attribution above (since as UTC time or null)
+  total                   a tally over every counted invocation
+  runs[]                  {id, status, created_at} plus a tally, oldest first
+  purposes[]              {purpose} plus a tally, by no-mistakes' purpose
+                          name (review, review-fix, test, document, ci, ...)
+A tally is {invocations, exit: {<exit status>: count}, duration_ms,
+input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens}, and
+each token field is {total, unknown}.
+exit=2
+$ /bin/bash bin/fm-pipeline-spend.sh record demo-task   # recording disabled (no config/pipeline-spend)
+exit=0
+$ /bin/bash bin/fm-spawn.sh t1 /tmp --relaunch --base-branch dev 2>&1 | head -3
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)

@@ -1,0 +1,13 @@
+== fm-brief rc=0 (13s) ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+== fm-dod-lib rc=0 (5s) all fm-dod-lib tests passed
+== fm-pipeline-spend rc=0 (4s) ok - missing tasks, secondmates, and unsafe ids are refused
+== fm-remote-job-claim-reap rc=0 (5s) ok - a due claim sweep over ~17460 dirs does not starve job serving
+== fm-remote-job-claim-retention rc=0 (0s) ok - claim sweep preserves numeric-name eligibility and whole-second expiry
+== fm-remote-job-launchagent rc=0 (90s) ALL TESTS PASSED
+== fm-remote-job rc=0 (153s) ALL TESTS PASSED
+== fm-review-diff rc=0 (4s) ok - fm-review-diff compares a task against its recorded base branch
+== fm-spawn-dispatch-profile rc=0 (300s) # all fm-spawn-dispatch-profile tests passed
+== fm-spawn-pool-base-freshen rc=0 (107s) # all fm-spawn-pool-base-freshen tests passed
+== fm-teardown rc=0 (280s) ok - the run abort and the leaked-process reap both complete before the destructive worktree return
+== fm-test-fixture-cleanup rc=0 (1s) ok - test registries and fixture roots stay out of a git worktree TMPDIR
+== fm-timeout-lib rc=0 (11s) ok - fm_timed_out accepts 124 and 137 and nothing else
