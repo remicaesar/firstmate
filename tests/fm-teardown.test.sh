@@ -549,7 +549,7 @@ add_lsof_no_holder() {
   cat > "$case_dir/fakebin/lsof" <<'SH'
 #!/usr/bin/env bash
 case " $* " in
-  *" -d cwd "*) exit 0 ;;
+  *" -d cwd,txt "*) exit 0 ;;
 esac
 exit 1
 SH
@@ -3991,6 +3991,158 @@ test_leaked_tasktmp_process_is_reaped() {
   pass "a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too"
 }
 
+# Plant a copy of sleep as a service binary inside the Claude Code scratchpad
+# that a worker launched in this case's worktree would get: the per-uid temp
+# root under CLAUDE_CODE_TMPDIR, then the launch directory with every
+# non-alphanumeric character replaced by '-', then a session id. Prints the
+# binary's path.
+plant_claude_scratchpad_binary() {  # <case-dir>
+  local case_dir=$1 name bin_dir
+  name=$(printf '%s' "$case_dir/wt" | LC_ALL=C tr -c 'a-zA-Z0-9' '-')
+  bin_dir="$case_dir/cctmp/claude-$(id -u)/$name/0a1b2c3d-session/scratchpad/bin"
+  mkdir -p "$bin_dir"
+  chmod 700 "$case_dir/cctmp/claude-$(id -u)"
+  cp "$(command -v sleep)" "$bin_dir/svc"
+  chmod +x "$bin_dir/svc"
+  # macOS kills a copied system binary until it carries its own signature.
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - -f "$bin_dir/svc" >/dev/null 2>&1 || true
+  fi
+  printf '%s\n' "$bin_dir/svc"
+}
+
+# Start <binary> 300 from / so nothing but its executable is under a task
+# root, the shape the observed scratchpad services took. Sets STARTED_PID.
+start_rooted_only_by_executable() {  # <binary>
+  ( cd / && exec "$1" 300 ) > /dev/null 2>&1 &
+  STARTED_PID=$!
+  disown "$STARTED_PID" 2>/dev/null || true
+}
+
+test_leaked_scratchpad_process_is_reaped() {
+  local case_dir rc svc pid
+  case_dir=$(make_case leaked-scratchpad-reap)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "harness=claude" >> "$case_dir/state/task-x1.meta"
+  land_shippable_commit "$case_dir"
+  svc=$(plant_claude_scratchpad_binary "$case_dir")
+  start_rooted_only_by_executable "$svc"
+  pid=$STARTED_PID
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "leaked-scratchpad-reap: setup service did not start"
+
+  rc=0
+  CLAUDE_CODE_TMPDIR="$case_dir/cctmp" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "leaked-scratchpad-reap: teardown should still succeed"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "leaked-scratchpad-reap: a service run from the task's Claude scratchpad survived teardown"
+  fi
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "leaked-scratchpad-reap: teardown did not report reaping the scratchpad service"
+  pass "a process whose executable lives in the task's Claude scratchpad is reaped by teardown"
+}
+
+test_claude_temp_root_is_left_alone_for_another_harness() {
+  local case_dir rc svc pid
+  case_dir=$(make_case scratchpad-not-ours)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "harness=codex" >> "$case_dir/state/task-x1.meta"
+  land_shippable_commit "$case_dir"
+  # The scratchpad a Claude session would have here, but this task's worker is
+  # not Claude, so nothing proves the directory is this task's.
+  svc=$(plant_claude_scratchpad_binary "$case_dir")
+  start_rooted_only_by_executable "$svc"
+  pid=$STARTED_PID
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "scratchpad-not-ours: setup service did not start"
+
+  rc=0
+  CLAUDE_CODE_TMPDIR="$case_dir/cctmp" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "scratchpad-not-ours: teardown should still succeed"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "scratchpad-not-ours: teardown killed a process under a Claude temp root its non-Claude worker never had"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  pass "a Claude temp root is reaped only for a task whose recorded harness is claude"
+}
+
+test_reap_only_reaps_a_held_task_without_cleaning_it_up() {
+  local case_dir rc svc pid wt_pid before
+  case_dir=$(make_case reap-only-held)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "harness=claude" >> "$case_dir/state/task-x1.meta"
+  seed_backlog_in_flight "$case_dir"
+  # Unlanded work: a full teardown would refuse, so a held task's reap must
+  # not depend on the landed-work test at all.
+  wt_commit_file "$case_dir" feature.txt held-unlanded "held work"
+  printf '#!/usr/bin/env bash\nprintf "treehouse %%s\\n" "$*" >> %q\n' "$case_dir/treehouse.log" \
+    > "$case_dir/fakebin/treehouse"
+  chmod +x "$case_dir/fakebin/treehouse"
+  svc=$(plant_claude_scratchpad_binary "$case_dir")
+  start_rooted_only_by_executable "$svc"
+  pid=$STARTED_PID
+  ( cd "$case_dir/wt" && exec sleep 300 ) > /dev/null 2>&1 &
+  wt_pid=$!
+  disown "$wt_pid" 2>/dev/null || true
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "reap-only-held: setup service did not start"
+  kill -0 "$wt_pid" 2>/dev/null || fail "reap-only-held: setup worktree sleeper did not start"
+  before=$(cksum "$case_dir/state/task-x1.meta" | awk '{print $1, $2}')
+
+  rc=0
+  CLAUDE_CODE_TMPDIR="$case_dir/cctmp" \
+    run_teardown "$case_dir" --reap-only > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "reap-only-held: --reap-only should succeed for a task whose worker is gone"
+  if kill -0 "$pid" 2>/dev/null || kill -0 "$wt_pid" 2>/dev/null; then
+    kill -KILL "$pid" "$wt_pid" 2>/dev/null || true
+    fail "reap-only-held: a leaked scratchpad or worktree process survived --reap-only"
+  fi
+  assert_grep "reap-only task-x1 complete" "$case_dir/stdout" \
+    "reap-only-held: --reap-only did not report its outcome"
+  [ "$(cksum "$case_dir/state/task-x1.meta" | awk '{print $1, $2}')" = "$before" ] \
+    || fail "reap-only-held: --reap-only modified the task record"
+  assert_present "$case_dir/wt/feature.txt" "reap-only-held: --reap-only touched the local copy"
+  assert_absent "$case_dir/treehouse.log" "reap-only-held: --reap-only returned the worktree"
+  [ "$(backlog_row_state "$case_dir")" = in_flight ] \
+    || fail "reap-only-held: --reap-only moved the backlog item"
+  pass "--reap-only reaps a held task's leaked processes and leaves the task itself in place"
+}
+
+test_reap_only_refuses_an_endpoint_not_confidently_gone() {
+  local case_dir rc pid before
+  case_dir=$(make_case reap-only-live)
+  write_meta "$case_dir" no-mistakes ship
+  add_unreadable_tmux "$case_dir"
+  ( cd "$case_dir/wt" && exec sleep 300 ) > /dev/null 2>&1 &
+  pid=$!
+  disown "$pid" 2>/dev/null || true
+  sleep 0.3
+  before=$(cksum "$case_dir/state/task-x1.meta" | awk '{print $1, $2}')
+
+  rc=0
+  run_teardown "$case_dir" --reap-only > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 1 "$rc" "reap-only-live: --reap-only must refuse while the worker may be alive"
+  assert_grep "not confidently dead or agent-less" "$case_dir/stderr" \
+    "reap-only-live: the refusal did not name the endpoint state"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "reap-only-live: --reap-only killed a process while the worker may still own it"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  [ "$(cksum "$case_dir/state/task-x1.meta" | awk '{print $1, $2}')" = "$before" ] \
+    || fail "reap-only-live: the refusal modified the task record"
+  rc=0
+  run_teardown "$case_dir" --reap-only --force > /dev/null 2>&1 || rc=$?
+  expect_code 2 "$rc" "reap-only-live: --reap-only with --force must be rejected"
+  pass "--reap-only refuses unless the recorded worker is confidently gone, and never combines with --force"
+}
+
 test_lsof_absent_reaps_tmux_process_group() {
   local case_dir rc pid path_without_lsof
   case_dir=$(make_case lsof-absent-process-group-reap)
@@ -4599,6 +4751,10 @@ test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
+test_leaked_scratchpad_process_is_reaped
+test_claude_temp_root_is_left_alone_for_another_harness
+test_reap_only_reaps_a_held_task_without_cleaning_it_up
+test_reap_only_refuses_an_endpoint_not_confidently_gone
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed

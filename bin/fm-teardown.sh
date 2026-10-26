@@ -180,6 +180,14 @@
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
 # Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+#        fm-teardown.sh <task-id> --reap-only [--legacy-record]
+#   --reap-only runs every record and slot-ownership check, then only Fix 2's
+#   leaked-process reap, and changes nothing else: the task record, backlog
+#   item, local copy, and endpoint stay in place. It refuses unless the
+#   recorded endpoint is confidently dead or agent-less (the same
+#   recovery-grade classifier --legacy-record uses), since a live worker's own
+#   processes sit under the same roots; stop the worker with bin/fm-control.sh
+#   first. It refuses for a second mate and cannot be combined with --force.
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
@@ -277,13 +285,19 @@
 #     two `go test` binaries, deadlines blown past by ~100x, pinning CPU for
 #     hours with no live task meta to attribute them to once teardown had
 #     already removed it). reap_task_worktree_processes finds every process
-#     whose CURRENT WORKING DIRECTORY is this task's own worktree or tasktmp
-#     root via `lsof -a -d cwd` (cheap: bounded by process count, not by
-#     walking the worktree's file tree) and sends TERM, then KILL after a short
-#     grace period to any survivor whose process identity still matches. Both
-#     roots are unique per task and never
-#     shared, so this can never reach another task's or the primary's
-#     processes. Idempotent: nothing left to find is a silent no-op.
+#     whose CURRENT WORKING DIRECTORY or executable is under this task's own
+#     worktree, its tasktmp, or its harness's per-worktree temp root (Claude
+#     Code's scratchpad parent; task_harness_temp_roots owns which harnesses
+#     have one) via `lsof -a -d cwd,txt` (cheap: bounded by process count, not
+#     by walking the worktree's file tree) and sends TERM, then KILL after a
+#     short grace period to any survivor whose process identity still matches.
+#     Those roots are keyed on this task's own id or slot and never shared, so
+#     this can never reach another task's or the primary's processes (observed
+#     2026-09-19: 25 services run from a held task's scratchpad, never torn
+#     down, burned about 400% CPU for three days at ppid 1). Idempotent:
+#     nothing left to find is a silent no-op. A task that is not being torn
+#     down, such as one held for a captain call, gets the same reap through
+#     --reap-only.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
 #     being reachable by Fix 2, because its working directory is wherever it
@@ -390,11 +404,13 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+REAP_ONLY=0
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
+    --reap-only) REAP_ONLY=1 ;;
     *)
       echo "error: invalid teardown request" >&2
       exit 2
@@ -402,6 +418,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ "$REAP_ONLY" = 1 ] && [ -n "$FORCE" ]; then
+  echo "error: invalid teardown request" >&2
+  exit 2
+fi
 fm_backlog_directory_present "$STATE" "state directory" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -524,6 +544,10 @@ fm_backlog_record_present "$META" "task record" "$STATE" || {
 }
 TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 [ -n "$TEARDOWN_META_KIND" ] || TEARDOWN_META_KIND=ship
+if [ "$REAP_ONLY" = 1 ] && [ "$TEARDOWN_META_KIND" = secondmate ]; then
+  echo "REFUSED: --reap-only does not apply to second mate $ID; nothing was changed" >&2
+  exit 1
+fi
 # Retiring a persistent secondmate is main's alone in both postures; the kind
 # is read under the metadata lock (role partition: bin/fm-lease-lib.sh).
 [ "$TEARDOWN_META_KIND" != secondmate ] || fm_lease_forbid_branch "secondmate retirement (fm-teardown)"
@@ -1139,6 +1163,7 @@ PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 # tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
 # (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
+HARNESS=$(fm_meta_get "$META" harness)
 BUSY_GEN=$(fm_meta_get "$META" busy_gen)
 if [ -z "$BUSY_GEN" ]; then
   BUSY_GEN=$(cat "$STATE/$ID.busy-gen" 2>/dev/null || true)
@@ -2072,26 +2097,33 @@ conclude_task_no_mistakes_run() {  # <worktree>
 }
 
 # Fix 2 (see script header): pids of every process whose CURRENT WORKING
-# DIRECTORY is exactly $1 or under it, from one bounded system-wide `lsof -a
-# -d cwd` scan (never the recursive +D file-tree walk, which lsof itself
-# documents as slow). Never $$ (this script's own pid). Empty output when
-# nothing matches; failure means the scan could not establish a safe result.
-pids_with_cwd_under() {  # <dir>
-  local dir=$1 out pid path line
+# DIRECTORY or program text (its executable, or a library it mapped) is exactly
+# $1 or under it, from one bounded system-wide `lsof -a -d cwd,txt` scan (never
+# the recursive +D file-tree walk, which lsof itself documents as slow). Never
+# $$ (this script's own pid). Empty output when nothing matches; failure means
+# the scan could not establish a safe result.
+pids_rooted_under() {  # <dir>
+  local dir=$1 out pid fd path line
   [ -n "$dir" ] && [ -d "$dir" ] || return 0
   dir=$(cd "$dir" && pwd -P) || return 1
-  out=$(lsof -a -d cwd -Fpn 2>/dev/null) || return 1
+  out=$(lsof -a -d cwd,txt -Fpfn 2>/dev/null) || return 1
   [ -n "$out" ] || return 0
   pid=
+  fd=
   while IFS= read -r line; do
     case "$line" in
       p*)
         pid=${line#p}
+        fd=
         case "$pid" in ''|*[!0-9]*) return 1 ;; esac
         ;;
-      fcwd) [ -n "$pid" ] || return 1 ;;
+      f*)
+        [ -n "$pid" ] || return 1
+        fd=${line#f}
+        ;;
       n*)
         [ -n "$pid" ] || return 1
+        case "$fd" in cwd|txt) ;; *) continue ;; esac
         path=${line#n}
         case "$path" in
           "$dir"|"$dir"/*)
@@ -2143,7 +2175,7 @@ task_pids_under_roots() {  # <dir>...
   local dir dir_pids pids=""
   for dir in "$@"; do
     [ -n "$dir" ] || continue
-    if ! dir_pids=$(pids_with_cwd_under "$dir"); then
+    if ! dir_pids=$(pids_rooted_under "$dir"); then
       TASK_PIDS_FAILED_DIR=$dir
       return 1
     fi
@@ -2151,6 +2183,48 @@ task_pids_under_roots() {  # <dir>...
 $dir_pids"
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
+}
+
+# Fix 2's harness roots: a temp directory OUTSIDE the worktree that the
+# worker's own harness keys on this task's worktree path, so a process run from
+# it (a binary built into a scratchpad) is this task's even though neither its
+# cwd nor its executable is under the worktree. Sets TASK_HARNESS_TEMP_ROOTS to
+# the existing, user-owned, non-symlink roots; empty for every other harness.
+# Only claude keeps such a root: Claude Code places each session's scratchpad
+# and background-task output under
+#   realpath(${CLAUDE_CODE_TMPDIR:-/tmp}/claude-<uid>)/<cwd>/<session-id>/
+# where <cwd> is its launch directory with every non-alphanumeric character
+# replaced by '-' (verified against Claude Code 2.1.311's bundled source). The
+# worker's CLAUDE_CODE_TMPDIR is not recorded, so /tmp and this process's own
+# value are both candidates. A name over 200 characters gets a hash suffix this
+# script cannot reproduce, so such a worktree contributes no root rather than a
+# guessed one. Residual: two launch paths differing only in punctuation share
+# one name; pool slot paths do not collide that way.
+TASK_HARNESS_TEMP_ROOTS=()
+task_harness_temp_roots() {  # <harness> <worktree>
+  local harness=$1 worktree=$2 uid base cwd name root seen=
+  TASK_HARNESS_TEMP_ROOTS=()
+  [ "$harness" = claude ] && [ -n "$worktree" ] || return 0
+  uid=$(id -u) || return 0
+  for cwd in "$worktree" "$(cd "$worktree" 2>/dev/null && pwd -P)"; do
+    [ -n "$cwd" ] || continue
+    # Non-ASCII spellings differ between bytes here and UTF-16 there: skip.
+    LC_ALL=C printf '%s' "$cwd" | LC_ALL=C grep -q '[^ -~]' && continue
+    name=$(printf '%s' "$cwd" | LC_ALL=C tr -c 'a-zA-Z0-9' '-')
+    [ "${#name}" -le 200 ] || continue
+    for base in /tmp ${CLAUDE_CODE_TMPDIR:+"$CLAUDE_CODE_TMPDIR"}; do
+      root="$base/claude-$uid/$name"
+      [ -d "$root" ] && [ ! -L "$root" ] && [ -O "$root" ] || continue
+      root=$(cd "$root" && pwd -P) || continue
+      case "$seen" in *"
+$root
+"*) continue ;; esac
+      seen="$seen
+$root
+"
+      TASK_HARNESS_TEMP_ROOTS+=("$root")
+    done
+  done
 }
 
 reap_task_backend_process_group() {  # <label>
@@ -2381,6 +2455,20 @@ collect_local_firstmate_states() {
       esac
     done < "$reg"
   done
+}
+
+# Fix 2's one entry point, shared by full teardown and --reap-only. A slot this
+# task still owns is reaped with its tasktmp and its harness root; a reassigned
+# slot is another task's now, so neither it nor the harness root keyed on its
+# path is touched, and only the per-task tasktmp is.
+reap_task_processes() {
+  if teardown_owns_worktree; then
+    task_harness_temp_roots "$HARNESS" "$WT"
+    reap_task_worktree_processes worktree "$WT" "$TASK_TMP" \
+      ${TASK_HARNESS_TEMP_ROOTS[@]+"${TASK_HARNESS_TEMP_ROOTS[@]}"}
+  else
+    reap_task_worktree_processes tasktmp "$TASK_TMP"
+  fi
 }
 
 require_exclusive_worktree_slot_record() {
@@ -3362,6 +3450,28 @@ remove_secondmate_registry_entry() {
 require_exclusive_task_worktree_slot || exit 1
 require_owned_task_worktree_slot || exit 1
 
+# --reap-only (see Usage): every record and slot-ownership check above has
+# passed and nothing has been changed yet. Reap, then stop before any step
+# that cleans up the task itself.
+if [ "$REAP_ONLY" = 1 ]; then
+  if [ "$TEARDOWN_WINDOWLESS" = 1 ]; then
+    REAP_ONLY_ENDPOINT=missing
+  else
+    REAP_ONLY_ENDPOINT=$(fm_backend_agent_state "$BACKEND" "$T")
+  fi
+  case "$REAP_ONLY_ENDPOINT" in
+    dead|missing) ;;
+    *)
+      echo "REFUSED: task $ID's recorded endpoint reads '$REAP_ONLY_ENDPOINT', not confidently dead or agent-less; --reap-only would kill a live worker's own processes. Nothing was changed." >&2
+      echo "Stop the worker first (bin/fm-control.sh $ID exit), then retry." >&2
+      exit 1
+      ;;
+  esac
+  reap_task_processes
+  echo "reap-only $ID complete; task record, local copy, and endpoint left in place"
+  exit 0
+fi
+
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
 if [ "$KIND" = secondmate ]; then
@@ -3587,9 +3697,9 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
-elif [ "$KIND" != secondmate ]; then
-  reap_task_worktree_processes tasktmp "$TASK_TMP"
+fi
+if [ "$KIND" != secondmate ]; then
+  reap_task_processes
 fi
 if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
