@@ -513,18 +513,18 @@ The composer-classification record below observes the same gate from the other s
 Verified 2026-10-27 on Claude Code 2.1.311, from its bundled source and from a live crewmate.
 `bin/fm-teardown.sh`'s `task_harness_temp_roots` reaps processes run from this root, so the layout below is the claim it depends on.
 The bundled source resolves the temp root as `CLAUDE_CODE_TMPDIR` or `/tmp`, appends `claude-<uid>`, takes its realpath, appends the launch directory with `replace(/[^a-zA-Z0-9]/g,"-")` (names over 200 characters are cut and given a hash suffix), and puts each session's scratchpad at `<that>/<session-id>/scratchpad`.
-A live crewmate launched in a Treehouse slot reported this scratchpad:
+A live crewmate launched in a Treehouse slot reported this scratchpad, with the local user, slot, and session id replaced by placeholders:
 
 ```sh
 pwd -P
 echo "$CLAUDE_CODE_SESSION_ID"
-ls /private/tmp/claude-501/-Users-emirmuratsezer--treehouse-firstmate-3ada01-1-firstmate/
+ls /private/tmp/claude-<uid>/-Users-<user>--treehouse-<project>-<slot>-firstmate/
 ```
 
 ```
-/Users/emirmuratsezer/.treehouse/firstmate-3ada01/1/firstmate
-472f8555-56e6-4390-b1c5-c1a6c38b001e
-472f8555-56e6-4390-b1c5-c1a6c38b001e
+/Users/<user>/.treehouse/<project>/<slot>/firstmate
+<session-id>
+<session-id>
 ```
 
 `tests/fm-teardown.test.sh` pins the reap against that layout with a planted binary, so it confirms teardown's reading of the layout but not the layout itself; re-check this record after a Claude Code upgrade.
