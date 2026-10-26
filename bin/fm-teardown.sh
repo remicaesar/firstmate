@@ -183,7 +183,9 @@
 #        fm-teardown.sh <task-id> --reap-only [--legacy-record]
 #   --reap-only runs every record and slot-ownership check, then only Fix 2's
 #   leaked-process reap, and changes nothing else: the task record, backlog
-#   item, local copy, and endpoint stay in place. It refuses unless the
+#   item, and local copy stay in place. The dead worker's idle pane shell sits
+#   in the worktree too, so it is reaped like any other leaked process, and
+#   the backend may then close that husk pane. It refuses unless the
 #   recorded endpoint is confidently dead or agent-less (the same
 #   recovery-grade classifier --legacy-record uses), since a live worker's own
 #   processes sit under the same roots; stop the worker with bin/fm-control.sh
@@ -3468,7 +3470,7 @@ if [ "$REAP_ONLY" = 1 ]; then
       ;;
   esac
   reap_task_processes
-  echo "reap-only $ID complete; task record, local copy, and endpoint left in place"
+  echo "reap-only $ID complete; task record and local copy left in place (a dead worker's idle pane shell in the worktree is reaped too, which may close that pane)"
   exit 0
 fi
 
