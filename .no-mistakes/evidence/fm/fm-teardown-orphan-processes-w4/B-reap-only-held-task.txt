@@ -1,0 +1,36 @@
+## before --reap-only
+$ ps (scratchpad services)
+96481 96479       00:38 /private/tmp/claude-501/<encoded-worktree>/<session-id>/scratchpad/bin/svc-syncer 3600
+96483 96482       00:38 /private/tmp/claude-501/<encoded-worktree>/<session-id>/scratchpad/bin/svc-accounting 3601
+$ herdr pane get w1:p1 -> {"agent":null,"agent_status":"unknown"}
+meta cksum: 686379748 551
+backlog:
+## In flight
+- [ ] lab-r1 - lab reap fixture task (kind: ship) (since 2026-10-27) (hold: fm-hold-v1:bGFiOiBzaG91bGQgd2Uga2VlcCB0aGUgbG9jYWwgc3RhY2sgcnVubmluZz8=) (hold-kind: captain)
+  Captain hold set: 2026-10-26T23:50:33Z
+
+## $ bin/fm-teardown.sh lab-r1 --reap-only   (FM_HOME=<lab>)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for lab-r1: 65585 96481 96483
+teardown: force-killing leaked worktree process(es) for lab-r1: 65585
+reap-only lab-r1 complete; task record and local copy left in place (a dead worker's idle pane shell in the worktree is reaped too, which may close that pane)
+rc=
+
+## after
+$ ps (scratchpad services):
+(none)
+meta cksum: 686379748 551
+backlog:
+## In flight
+- [ ] lab-r1 - lab reap fixture task (kind: ship) (since 2026-10-27) (hold: fm-hold-v1:bGFiOiBzaG91bGQgd2Uga2VlcCB0aGUgbG9jYWwgc3RhY2sgcnVubmluZz8=) (hold-kind: captain)
+  Captain hold set: 2026-10-26T23:50:33Z
+worktree present: unlanded.txt
+git worktree list: 2 entries
+pane: {"agent":null,"agent_status":null}
+## idempotent re-run: $ bin/fm-teardown.sh lab-r1 --reap-only
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+reap-only lab-r1 complete; task record and local copy left in place (a dead worker's idle pane shell in the worktree is reaped too, which may close that pane)
+rc=0
+meta cksum: 686379748 551

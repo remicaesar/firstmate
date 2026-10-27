@@ -1,0 +1,14 @@
+## harness=codex task lab-r2; a Claude-shaped scratchpad dir exists for its worktree path
+27551     1 /private/tmp/claude-501/<enc-wt-lab-r2>/<session>/scratchpad/bin/svc-x 3604
+27553     1 sleep 3605
+
+## $ bin/fm-teardown.sh lab-r2 --reap-only
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+teardown: reaping leaked worktree process(es) for lab-r2: 27514 27553
+teardown: force-killing leaked worktree process(es) for lab-r2: 27514
+reap-only lab-r2 complete; task record and local copy left in place (a dead worker's idle pane shell in the worktree is reaped too, which may close that pane)
+rc=0
+
+## after
+27551     1 /private/tmp/claude-501/<enc-wt-lab-r2>/<session>/scratchpad/bin/svc-x 3604
+(test cleanup: svc-x pid 27551 killed manually after verification)

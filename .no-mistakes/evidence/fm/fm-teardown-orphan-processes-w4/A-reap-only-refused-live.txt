@@ -1,0 +1,5 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.jzfEkC
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: task lab-r1's recorded endpoint reads 'alive', not confidently dead or agent-less; --reap-only would kill a live worker's own processes. Nothing was changed.
+Stop the worker first (bin/fm-control.sh lab-r1 exit), then retry.
+rc=1

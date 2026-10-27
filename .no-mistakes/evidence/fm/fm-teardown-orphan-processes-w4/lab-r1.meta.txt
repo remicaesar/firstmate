@@ -1,0 +1,17 @@
+window=fm-lab-reap-62873-30910:w1:p1
+endpoint_task_id=lab-r1
+worktree=$LAB/wt-lab-r1
+project=$LAB/projects/proj
+harness=claude
+kind=ship
+mode=no-mistakes
+branch=fm/lab-r1
+tasktmp=$LAB/tasktmp-lab-r1
+model=default
+effort=default
+spawn_gen=s1793058622.71699.6431
+backend=herdr
+herdr_session=fm-lab-reap-62873-30910
+herdr_workspace_id=w1
+herdr_tab_id=w1:t1
+herdr_pane_id=w1:p1

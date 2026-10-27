@@ -1,0 +1,27 @@
+## before full teardown
+11385     1 /private/tmp/claude-501/<lab-enc>-wt-lab-r1/<session>/scratchpad/bin/svc-syncer 3602
+11387     1 /private/tmp/claude-501/<lab-enc>-wt-lab-r10/<session>/scratchpad/bin/svc-neighbor 3603
+
+## $ bin/fm-teardown.sh lab-r1 --force   (FM_HOME=<lab>; treehouse stubbed to a logger)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for lab-r1: 11385 12815
+proj: skipped: no origin remote
+teardown lab-r1 complete (window fm-lab-reap-62873-30910:w1:p1, worktree <lab>/wt-lab-r1)
+Backlog: lab-r1 stays open in /private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-lab.jzfEkC/data/backlog.md, still held for the captain with its deliverable recorded. Relay the question and close it only with bin/fm-captain-hold.sh answer.
+rc=0
+
+## after
+11387     1 /private/tmp/claude-501/<lab-enc>-wt-lab-r10/<session>/scratchpad/bin/svc-neighbor 3603
+meta present: 0
+backlog:
+# Backlog
+
+## In flight
+## Queued
+- [ ] lab-r1 - lab reap fixture task (kind: ship) (since 2026-10-27) (hold: fm-hold-v1:bGFiOiBzaG91bGQgd2Uga2VlcCB0aGUgbG9jYWwgc3RhY2sgcnVubmluZz8=) (hold-kind: captain)
+  Captain hold set: 2026-10-26T23:50:33Z
+## Done
+treehouse.log:
+treehouse return --force <lab>/wt-lab-r1
+(test cleanup: neighbor pid 11387 killed manually after verification)
