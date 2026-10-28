@@ -1,0 +1,85 @@
+=== S1 baseline: no config/gh-accounts, active account emir-lovie ===
+active gh account: emir-lovie
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+GraphQL: Could not resolve to a Repository with the name 'remicaesar/legal_document_analyzer'. (repository)
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+$ bin/fm-pr-reviewers.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+gh: Not Found (HTTP 404)
+fm-pr-reviewers: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+
+=== S2 mapping remicaesar -> remicaesar ===
+# owner login
+remicaesar remicaesar
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+STATE: merged at 2026-10-28T15:36:39Z
+[exit 0]
+$ bin/fm-pr-reviewers.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+claude	2 recent commits
+[exit 0]
+--- crew-state PR read path (fm_pr_github_read_record) ---
+$ bash -c . bin/fm-pr-lib.sh; fm_pr_github_read_record remicaesar legal_document_analyzer 47 && echo "state=$FM_PR_RECORD_STATE merged=$FM_PR_RECORD_MERGED"
+state=MERGED merged=true
+[exit 0]
+active gh account: emir-lovie
+
+=== S3 unmapped owner lovieco with mapping file present runs on active login ===
+$ bin/fm-pr-state.sh https://github.com/lovieco/lovie/pull/2253
+STATE: merged at 2026-10-28T15:47:05Z
+[exit 0]
+
+=== S4 case-insensitive owner match (REMICAESAR in file) ===
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+STATE: merged at 2026-10-28T15:36:39Z
+[exit 0]
+
+=== S5 adversarial: malformed file (third field) refuses, no fallback ===
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts line 1 is not "<owner> <login>"
+error: refusing to run gh for GitHub owner remicaesar on the active gh account while /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts is unusable
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+--- malformed file: CR line ending ---
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts contains a control character such as a CR
+error: refusing to run gh for GitHub owner remicaesar on the active gh account while /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts is unusable
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+--- duplicate owner ---
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts names owner remicaesar more than once
+error: refusing to run gh for GitHub owner remicaesar on the active gh account while /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts is unusable
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+
+=== S6 adversarial: mapped login with no stored token refuses ===
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+error: gh login no-such-login-xyz, mapped for GitHub owner remicaesar in /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.8MAith/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+
+=== S7 wrong mapping (remicaesar -> emir-lovie) gives not-found, i.e. the login really is selected ===
+$ bin/fm-pr-state.sh https://github.com/remicaesar/legal_document_analyzer/pull/47
+GraphQL: Could not resolve to a Repository with the name 'remicaesar/legal_document_analyzer'. (repository)
+fm-pr-state: could not read https://github.com/remicaesar/legal_document_analyzer/pull/47
+[exit 2]
+
+active gh account: emir-lovie
+  ✓ Logged in to github.com account emir-lovie (keyring)
+  - Active account: true
+  ✓ Logged in to github.com account remicaesar (keyring)
+  - Active account: false
+=== S8 token never printed even under bash -x ===
+exit=0; trace lines=258
++ exit 0
+remicaesar token string absent from xtrace output
+++ declare -F fm_gh_as
+++ fm_gh_as remicaesar gh pr view https://github.com/remicaesar/legal_document_analyzer/pull/47 --json state,mergedAt,isDraft,headRefOid,author,mergeable,reviewDecision --jq '
+++ set +x
+=== S9 merge-poll program as fm-watch.sh invokes it (fm_pr_gh_as <owner> ... fm-pr-poll.sh --validated) ===
+--- without the per-owner login (active emir-lovie) ---
+[exit 0] (silent = no merge seen)
+--- through fm_pr_gh_as with mapping remicaesar remicaesar ---
+merged
+[exit 0]
