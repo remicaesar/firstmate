@@ -111,6 +111,7 @@ BUDGET_CAP=$((CHECK_TIMEOUT - 3))
 [ "$BUDGET" -le "$BUDGET_CAP" ] || BUDGET=$BUDGET_CAP
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-contributions.XXXXXX")
 LOCK_HELD=0
+FORGE_OWNER=
 cleanup() {
   [ "$LOCK_HELD" = 0 ] || fm_lock_release "$STATE/.contributions.lock" || true
   rm -rf -- "$TMP"
@@ -207,7 +208,9 @@ forge() {
   # The budget, not the forge, refused this read.
   [ "$remaining" -gt 0 ] || { BUDGET_EXHAUSTED=1; : > "$TMP/budget-exhausted"; return 1; }
   [ "$remaining" -le 5 ] || remaining=5
-  fm_run_timed "$remaining" env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 \
+  # The read runs as the gh login mapped for the observed owner
+  # (bin/fm-gh-account-lib.sh); a mapping that cannot be used is a failed read.
+  fm_pr_gh_as "$FORGE_OWNER" fm_run_timed "$remaining" env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 \
     gh "$@" 2> "$forge_err" || rc=$?
   # A kill at the read bound or the deadline is budget refusal too; only the
   # forge's own nonzero exit is unavailable evidence.
@@ -236,6 +239,7 @@ observe() { # canonical GitHub URL -> normalized JSON
   case "$url" in https://github.com/*) ;; *) return 1 ;; esac
   part=${url#https://github.com/}; number=${part##*/}; part=${part%/*}; kind=${part##*/}; part=${part%/*}
   case "$kind" in pull) endpoint="repos/$part/pulls/$number" ;; issues) endpoint="repos/$part/issues/$number" ;; *) return 1 ;; esac
+  FORGE_OWNER=${part%%/*}
   rm -f -- "$TMP/budget-exhausted" "$TMP/forge-unavailable"
   BUDGET_EXHAUSTED=0
   forge api "$endpoint" > "$TMP/core.json" || return 1

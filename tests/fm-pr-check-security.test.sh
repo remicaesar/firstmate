@@ -139,6 +139,13 @@ SH
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+# A case that maps an owner in config/gh-accounts logs the GH_TOKEN each call
+# saw; only the login "alt" is signed in, with a token named after it.
+[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh %s %s\n' "${GH_TOKEN:-none}" "$*" >> "$FM_TEST_GH_TOKEN_LOG"
+if [ "${1:-} ${2:-}" = "auth token" ]; then
+  case " $* " in *" --user alt "*) printf 'fake-token-for-alt\n'; exit 0 ;; esac
+  exit 1
+fi
 case "${1:-} ${2:-}" in
   "api graphql")
     printf '%s\n' \
@@ -205,6 +212,7 @@ SH
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh-axi %s %s\n' "${GH_TOKEN:-none}" "$*" >> "$FM_TEST_GH_TOKEN_LOG"
 case "${1:-} ${2:-}" in
   "pr view")
     [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
@@ -733,6 +741,86 @@ test_direct_pr_unpushed_commit_refuses_registration() {
     || fail "direct-PR refusal did not name the unpushed commit: $(cat "$dir/stderr")"
   [ ! -e "$dir/home/state/task-a.check.sh" ] || fail "direct-PR unpushed commit still armed a poll"
   pass "fm-pr-check refuses a direct-PR registration while a later commit is only in the copy"
+}
+
+# Every GitHub read and merge a call made, other than the token lookup itself,
+# must have carried the mapped login's token; prints the offending lines.
+gh_token_lines_not_alt() {  # <token-log>
+  grep -v ' auth token ' "$1" | grep -v '^gh fake-token-for-alt \|^gh-axi fake-token-for-alt ' || true
+}
+
+# Fails when a fake token reached any output or durable record of the case.
+assert_no_gh_token_leak() {  # <dir> <label>
+  local dir=$1 label=$2 hit
+  hit=$(grep -rl 'fake-token-for-' "$dir" --exclude-dir=fakebin --exclude=gh-token.log --exclude=gh.log --exclude=gh-axi.log 2>/dev/null || true)
+  [ -z "$hit" ] || fail "$label: a token reached $hit"
+}
+
+test_mapped_owner_arms_polls_and_merges_as_its_login() {
+  local dir rc id=a-task expected=0123456789abcdef0123456789abcdef01234567 offending
+  dir=$(make_case gh-account-poll)
+  write_task_meta "$dir" "$id"
+  printf 'O alt\n' > "$dir/home/config/gh-accounts"
+  : > "$dir/gh-token.log"
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_HEAD=$expected \
+    run_check_entry "$dir" "$id" https://github.com/o/r/pull/1 > "$dir/check.out" 2> "$dir/check.err" \
+    || fail "mapped arming failed: $(cat "$dir/check.err")"
+  grep -qxF "pr_head=$expected" "$dir/home/state/$id.meta" || fail "mapped arming did not read the PR head"
+  # The watcher reaches this poll before the contributions observer, by name.
+  set +e
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_STATE=MERGED \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "mapped watcher did not complete (rc=$rc): $(cat "$dir/watch.err")"
+  grep -q '^check: .*: merged$' "$dir/watch.out" || fail "the mapped merge poll never saw the merge"
+  [ "$(grep -c '^gh fake-token-for-alt pr view https://github.com/o/r/pull/1 ' "$dir/gh-token.log")" -ge 3 ] \
+    || fail "the draft, head, and poll reads did not all run as the mapped login:"$'\n'"$(cat "$dir/gh-token.log")"
+  offending=$(gh_token_lines_not_alt "$dir/gh-token.log")
+  [ -z "$offending" ] || fail "a mapped read ran on another login:"$'\n'"$offending"
+  assert_no_gh_token_leak "$dir" "mapped arming and poll"
+
+  dir=$(make_case gh-account-merge)
+  write_task_meta "$dir"
+  printf 'my-org alt\n' > "$dir/home/config/gh-accounts"
+  : > "$dir/gh-token.log"
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_HEAD=$expected \
+    run_merge_entry "$dir" task-a https://github.com/my-org/repo/pull/37 -- --merge \
+    > "$dir/merge.out" 2> "$dir/merge.err" || fail "mapped merge failed: $(cat "$dir/merge.err")"
+  grep -qxF "pr merge 37 --repo my-org/repo --match-head-commit $expected --merge" "$dir/gh.log" \
+    || fail "mapped merge did not reach the forge"
+  grep -q '^gh fake-token-for-alt pr merge 37 ' "$dir/gh-token.log" || fail "the merge did not run as the mapped login"
+  offending=$(gh_token_lines_not_alt "$dir/gh-token.log")
+  [ -z "$offending" ] || fail "a mapped merge read ran on another login:"$'\n'"$offending"
+  assert_no_gh_token_leak "$dir" "mapped merge"
+  pass "a mapped owner's PR is armed, polled, and merged as its gh login with no token in any output"
+}
+
+test_unusable_mapping_refuses_merge_and_absent_mapping_is_unchanged() {
+  local dir expected=0123456789abcdef0123456789abcdef01234567
+  dir=$(make_case gh-account-signed-out)
+  write_task_meta "$dir"
+  printf 'my-org ghost\n' > "$dir/home/config/gh-accounts"
+  : > "$dir/gh-token.log"
+  if FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_HEAD=$expected \
+    run_merge_entry "$dir" task-a https://github.com/my-org/repo/pull/37 > "$dir/merge.out" 2> "$dir/merge.err"; then
+    fail "a merge whose mapped login is signed out was not refused"
+  fi
+  grep -Fq 'gh login ghost, mapped for GitHub owner my-org' "$dir/merge.err" \
+    || fail "the refusal did not name the mapped login: $(cat "$dir/merge.err")"
+  assert_no_grep 'pr merge' "$dir/gh.log" "a refused mapping still merged on the active login"
+  assert_no_grep 'pr=' "$dir/home/state/task-a.meta" "a refused mapping recorded the PR before refusing"
+
+  dir=$(make_case gh-account-absent)
+  write_task_meta "$dir"
+  : > "$dir/gh-token.log"
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_HEAD=$expected \
+    run_merge_entry "$dir" task-a https://github.com/my-org/repo/pull/37 > "$dir/merge.out" 2> "$dir/merge.err" \
+    || fail "a merge with no mapping failed: $(cat "$dir/merge.err")"
+  assert_no_grep 'auth token' "$dir/gh.log" "a merge with no mapping looked up a token"
+  assert_no_grep 'fake-token' "$dir/gh-token.log" "a merge with no mapping carried a token"
+  grep -q '^gh none pr merge 37 ' "$dir/gh-token.log" || fail "a merge with no mapping did not run on the active login"
+  pass "an unusable mapping refuses the merge before recording, and no mapping merges exactly as before"
 }
 
 test_valid_recording_and_merge_derivation() {
@@ -3500,6 +3588,8 @@ test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
 test_atomic_interruption_leaves_no_partial_artifact
 test_concurrent_watcher_sees_only_complete_publication
+test_mapped_owner_arms_polls_and_merges_as_its_login
+test_unusable_mapping_refuses_merge_and_absent_mapping_is_unchanged
 test_poll_publication_refuses_unsafe_destinations
 test_live_artifact_single_link_and_privacy_validation
 test_device_renumbered_poll_stays_armed

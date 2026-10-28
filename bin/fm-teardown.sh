@@ -1492,13 +1492,27 @@ remove_pr_poll_artifacts() {
     "$state_dir/$id.merge-authority" "$state_dir/$id.check-trust" || return 1
 }
 
+# The GitHub owner whose gh login (bin/fm-gh-account-lib.sh) runs the PR reads
+# below: the recorded PR URL's owner, else the worktree origin remote's. Prints
+# nothing when neither names a github.com owner, so the read uses the active
+# login as before.
+pr_gh_owner() {
+  local remote
+  fm_pr_gh_account_load || return 0
+  if [ -n "$PR_URL" ] && fm_gh_account_owner_from_remote "$PR_URL"; then
+    return 0
+  fi
+  remote=$(git -C "$WT" remote get-url origin 2>/dev/null) || return 0
+  fm_gh_account_owner_from_remote "$remote" || true
+}
+
 # Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
 # single match and returns 0; returns non-zero on no match or any lookup failure,
 # so the caller treats it as "no PR found" (fail-safe).
 pr_number_from_branch() {
   local branch=$1 out n
   [ -n "$branch" ] && [ "$branch" != HEAD ] || return 1
-  out=$( cd "$WT" && gh-axi pr list --state all --head "$branch" --limit 1 2>/dev/null ) || return 1
+  out=$( cd "$WT" && fm_pr_gh_as "$(pr_gh_owner)" gh-axi pr list --state all --head "$branch" --limit 1 2>/dev/null ) || return 1
   n=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*\([0-9][0-9]*\),.*/\1/p' | head -1)
   [ -n "$n" ] || return 1
   printf '%s' "$n"
@@ -1575,7 +1589,7 @@ pr_is_merged() {
     target=$(pr_number_from_branch "$branch") || return 1
   fi
   [ -n "$target" ] || return 1
-  view=$(cd "$WT" && gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
+  view=$(cd "$WT" && fm_pr_gh_as "$(pr_gh_owner)" gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
   state=${view%%$'\t'*}
   remainder=${view#*$'\t'}
   [ "$state" != "$view" ] || return 1

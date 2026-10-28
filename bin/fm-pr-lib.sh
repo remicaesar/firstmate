@@ -916,6 +916,23 @@ fm_pr_poll_retirement_receipt_valid() {
   FM_PR_RETIRE_RECEIPT_IDENTITY=$(fm_pr_file_identity "$receipt") || return 1
 }
 
+# bin/fm-gh-account-lib.sh is loaded on first use, so callers that never read
+# GitHub need not ship it.
+FM_PR_LIB_DIR=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "$d" && pwd)
+fm_pr_gh_account_load() {
+  declare -F fm_gh_as >/dev/null 2>&1 && return 0
+  # shellcheck source=bin/fm-gh-account-lib.sh
+  . "$FM_PR_LIB_DIR/fm-gh-account-lib.sh"
+}
+
+# fm_pr_gh_as <owner> <command> [args...]
+# Runs a gh or gh-axi command addressing a GitHub owner's repository as the gh
+# login bin/fm-gh-account-lib.sh maps for that owner.
+fm_pr_gh_as() {
+  fm_pr_gh_account_load || return 1
+  fm_gh_as "$@"
+}
+
 fm_pr_github_read_record_with_gh() {  # <owner> <repo> <number>
   local owner=$1 repo=$2 number=$3 fields line total=0 named=0
   local state='' merged=''
@@ -923,7 +940,7 @@ fm_pr_github_read_record_with_gh() {  # <owner> <repo> <number>
   FM_PR_RECORD_MERGED=
 
   # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
-  if ! fields=$(gh api graphql \
+  if ! fields=$(fm_pr_gh_as "$owner" gh api graphql \
     -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged}}}' \
     -F "owner=$owner" -F "repo=$repo" -F "number=$number" \
     --jq '.data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring)' \
@@ -958,7 +975,7 @@ fm_pr_github_read_record_with_gh_axi() {  # <owner> <repo> <number>
   local owner=$1 repo=$2 number=$3 output state
   FM_PR_RECORD_STATE=
   FM_PR_RECORD_MERGED=
-  if ! output=$(gh-axi pr view "$number" --repo "$owner/$repo" 2>/dev/null); then
+  if ! output=$(fm_pr_gh_as "$owner" gh-axi pr view "$number" --repo "$owner/$repo" 2>/dev/null); then
     return 1
   fi
   if ! state=$(printf '%s\n' "$output" | awk '

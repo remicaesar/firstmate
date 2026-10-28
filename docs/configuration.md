@@ -9,7 +9,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | --- | --- |
 | Firstmate's code, private files, or project location | [FM_HOME](#fm_home) and [operational home layout](#operational-home-layout-and-state) |
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
-| Worker permissions, accounts, or environment | [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), and [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist) |
+| Worker permissions, accounts, or environment | [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [GitHub account per owner](#github-account-per-owner-configgh-accounts), and [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
@@ -896,6 +896,37 @@ Pins are not inherited into secondmate homes: a local secondmate agent launches 
 A remote secondmate is launched on its host from its own home's configuration, so create the file in that remote home.
 
 [`bin/fm-worker-account-lib.sh`](../bin/fm-worker-account-lib.sh) owns parsing, the sign-in check, and the full list of credentials a Claude launch unsets; [runtime backend verification](verification/runtime-backends.md#worker-account-pin-sign-in-check) records the check against the real runners.
+
+## GitHub account per owner (config/gh-accounts)
+
+A machine can hold several gh logins for github.com, but gh answers every command with the one active login, and a private repository is invisible to every other login: GitHub reports "Could not resolve to a Repository" or "Repository not found", never a permission error.
+The optional local, gitignored `config/gh-accounts` maps each repository owner, a user or organization, to the gh login that can see it, so Firstmate's own GitHub reads and merges for that owner's repositories work without switching the active account.
+
+With the file absent, every GitHub call runs exactly as before on the active login.
+
+### File format
+
+One `<owner> <login>` pair per line, separated by spaces or tabs, for example `remicaesar remicaesar`.
+Blank lines and lines starting with `#` are ignored.
+Owners match case-insensitively and may each appear once; an owner the file does not name keeps the active login.
+A final newline is optional; a CR, any other control character, a third field, or a name outside GitHub's alphabet makes the file malformed.
+
+### What uses it
+
+Each mapped command runs with `GH_TOKEN` set, in that command's environment alone, to the token `gh auth token --hostname github.com --user <login>` returns for the stored login.
+That covers the merge, PR-ready recording, the merge poll, the contribution observer, `bin/fm-pr-state.sh`, `bin/fm-pr-reviewers.sh`, `bin/fm-crew-state.sh`'s PR state read, and teardown's merged-PR check.
+The active gh account, the gh configuration, and git credentials are never changed, and the token is never printed, logged, written to a file, or passed as an argument.
+Git fetches and pushes keep using git's own credential setup, and a worker's own `gh` or `gh-axi` commands and the no-mistakes pipeline are not covered.
+
+### Failures and inheritance
+
+A malformed or unreadable file, or a mapped login with no stored token, refuses the GitHub call and names the file, rather than falling back to the active login, which could only answer "not found".
+A merge reports that refusal before anything is recorded; the merge poll logs it and keeps waiting, as it does after any failed read.
+Sign a missing login in with `gh auth login`; it can stay inactive.
+
+The file is not inherited into secondmate homes, so create it in each home whose fleet reads such repositories.
+
+[`bin/fm-gh-account-lib.sh`](../bin/fm-gh-account-lib.sh) owns parsing and per-command selection.
 
 ## Lavish server address (config/lavish-axi-host)
 
