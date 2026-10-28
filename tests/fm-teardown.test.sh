@@ -895,6 +895,48 @@ test_squash_merged_branch_deleted_allows() {
   pass "squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)"
 }
 
+# The merged PR lives in a repository only the mapped login can see, so the
+# landed-work check proves it only by reading as that login.
+test_squash_merged_pr_reads_as_the_mapped_login() {
+  local case_dir rc pr_head offending
+  case_dir=$(make_case squash-merged-mapped)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  append_pr_meta_for_current_head "$case_dir"
+  pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  printf 'Example alt\n' > "$case_dir/config/gh-accounts"
+  mv "$case_dir/fakebin/gh" "$case_dir/fakebin/gh-fixture"
+  cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s\n' "${GH_TOKEN:-none}" "$*" >> "${0%/*}/../gh-token.log"
+if [ "${1:-} ${2:-}" = "auth token" ]; then
+  case " $* " in *" --user alt "*) printf 'fake-token-for-alt\n'; exit 0 ;; esac
+  exit 1
+fi
+if [ "${GH_TOKEN:-}" != fake-token-for-alt ]; then
+  echo "GraphQL: Could not resolve to a Repository with the name 'example/repo'. (repository)" >&2
+  exit 1
+fi
+exec "${0%/*}/gh-fixture" "$@"
+SH
+  chmod +x "$case_dir/fakebin/gh"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "squash-merged-mapped: teardown should prove the merged PR as the mapped login"
+  grep -q '^fake-token-for-alt pr view https://github.com/example/repo/pull/7 ' "$case_dir/gh-token.log" \
+    || fail "squash-merged-mapped: the merged-PR read did not run as the mapped login"
+  offending=$(grep -v ' auth token ' "$case_dir/gh-token.log" | grep -v '^fake-token-for-alt ' || true)
+  [ -z "$offending" ] || fail "squash-merged-mapped: a read ran on another login: $offending"
+  ! grep -q 'fake-token-for-' "$case_dir/stdout" "$case_dir/stderr" \
+    || fail "squash-merged-mapped: a token reached teardown output"
+  pass "teardown proves a merged PR in a mapped owner's repository as that owner's gh login"
+}
+
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head() {
   local case_dir rc local_head pr_head
   case_dir=$(make_case squash-ancestor)
@@ -4684,6 +4726,7 @@ test_teardown_retires_v1_journal_when_projected_workspace_gone
 test_teardown_retains_v1_journal_when_projected_workspace_present
 test_teardown_retains_v1_journal_when_workspace_query_ambiguous
 test_squash_merged_branch_deleted_allows
+test_squash_merged_pr_reads_as_the_mapped_login
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
 test_squash_merged_pr_allows_replayed_unpushed_patch

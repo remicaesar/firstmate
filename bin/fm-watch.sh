@@ -2770,8 +2770,19 @@ while :; do
             triage_log "PR poll for $id changed before its validated check; skipping the stale snapshot"
             continue
           fi
-          run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
-            "$provider" "$url" "$host" "$path" "$number" || exit 1
+          if [ "$provider" = github ]; then
+            # The poll reads GitHub as the gh login mapped for the owner
+            # (bin/fm-gh-account-lib.sh). The poll's own bytes stay fixed, so
+            # the login reaches it only through this call's environment. A
+            # mapping that cannot be used reads nothing, as a failed lookup does.
+            fm_pr_gh_as "${path%%/*}" run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
+              "$provider" "$url" "$host" "$path" "$number" \
+              || { [ "${FM_GH_AS_REFUSED:-0}" = 1 ] || exit 1; FM_CHECK_RESULT=
+                triage_log "PR poll for $id was not read: the gh login mapped for ${path%%/*} cannot be used"; }
+          else
+            run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
+              "$provider" "$url" "$host" "$path" "$number" || exit 1
+          fi
           out=$FM_CHECK_RESULT
         elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
           custom_snapshot=$FM_CUSTOM_CHECK_SNAPSHOT
