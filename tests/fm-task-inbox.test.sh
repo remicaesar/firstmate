@@ -731,6 +731,30 @@ test_watcher_waits_on_busy_pane() {
   pass "watcher: busy deferrals survive restart, escalate once at the bound, and never type"
 }
 
+# The stuck-busy wake must not end delivery: once the worker goes idle with the
+# instruction still unhandled, the next check rings it, and a later busy stretch
+# for the same instruction neither types nor surfaces a second stuck-busy wake.
+test_watcher_rings_when_busy_escalated_worker_goes_idle() {
+  local dir
+  dir=$(busy_case busy-then-idle)
+  busy_steer_check "$dir"
+  busy_steer_check "$dir"
+  [ "$(grep -c 'stuck-busy' "$dir/state/.wake-queue")" = 1 ] || fail "fixture did not reach the stuck-busy wake"
+  [ ! -s "$dir/send.log" ] || fail "stuck-busy escalation typed into the busy pane"
+  busy_steer_check "$dir" "$(idle_capture "$dir")"
+  grep -qs 'Firstmate instruction waiting' "$dir/send.log" \
+    || fail "worker went idle after the stuck-busy wake and the doorbell was never re-rung"
+  [ "$(wc -l < "$dir/state/.wake-queue" | tr -d ' ')" = 1 ] || fail "the idle re-ring surfaced another wake"
+  : > "$dir/send.log"
+  busy_steer_check "$dir"
+  busy_steer_check "$dir"
+  busy_steer_check "$dir"
+  [ ! -s "$dir/send.log" ] || fail "a later busy stretch was typed into"
+  [ "$(wc -l < "$dir/state/.wake-queue" | tr -d ' ')" = 1 ] || fail "a later busy stretch repeated the stuck-busy wake"
+  [ -f "$dir/state/t1.inbox/001.msg" ] || fail "the unhandled instruction was lost"
+  pass "watcher: a worker that goes idle after a stuck-busy wake gets the doorbell rung again"
+}
+
 test_watcher_busy_budget_resets_on_ring_and_ack() {
   local dir rec
   dir=$(busy_case busy-reset)
@@ -793,8 +817,13 @@ test_watcher_successor_busy_reset_failure_surfaces() {
     [ "$(wc -l < "$dir/state/.wake-queue" 2>/dev/null | tr -d ' ')" = 1 ] \
       || fail "$mode successor must surface once, including check $check"
   done
-  [ "$(cat "$dir/state/t1.inbox/.escalated")" = "${rec##*/}" ] \
-    || fail "reset failure did not mark the successor as escalated"
+  if [ "$mode" = busy ]; then
+    inbox_lib "$dir/state" fm_task_inbox_busy_escalated "$dir/state" t1 "$rec" \
+      || fail "stuck-busy successor was not marked as busy-escalated"
+  else
+    [ "$(cat "$dir/state/t1.inbox/.escalated")" = "${rec##*/}" ] \
+      || fail "reset failure did not mark the successor as escalated"
+  fi
   case "$mode" in
     idle)
       grep -q 'steering-inbox busy bookkeeping unwritable' "$dir/state/.wake-queue" || fail "successor lost the reset failure reason"
@@ -1198,6 +1227,7 @@ test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
 test_watcher_rerings_idle_pane_quietly
 test_watcher_waits_on_busy_pane
+test_watcher_rings_when_busy_escalated_worker_goes_idle
 test_watcher_busy_budget_resets_on_ring_and_ack
 test_watcher_busy_bookkeeping_failure_surfaces
 test_watcher_successor_busy_reset_failure_surfaces idle
