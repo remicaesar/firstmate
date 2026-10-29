@@ -351,6 +351,37 @@ test_pr_based_dod_requires_non_draft() {
   pass "fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait"
 }
 
+# The worker's PR read-back and ready commands run as the gh login the home's
+# config/gh-accounts maps to the project's GitHub owner; an unmapped owner keeps
+# plain gh-axi, and no token is ever rendered into the brief.
+test_pr_based_dod_runs_as_mapped_gh_login() {
+  local home id brief
+  home="$TMP_ROOT/gh-account-home"
+  mkdir -p "$home/data" "$home/config" "$home/projects/owned-proj"
+  git -C "$home/projects/owned-proj" init -q
+  git -C "$home/projects/owned-proj" remote add origin https://github.com/remicaesar/owned-proj.git
+  id="brief-gh-unmapped"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" owned-proj --mode direct-PR >/dev/null 2>&1
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'mark it ready with `gh-axi pr ready <number>`' "$home/data/$id/brief.md" \
+    "an absent mapping must keep plain gh-axi"
+  printf 'remicaesar remicaesar\n' > "$home/config/gh-accounts"
+  id="brief-gh-mapped"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" owned-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks and $(...) must stay literal
+  assert_grep '(`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>` must print `draft: no`' "$brief" \
+    "a mapped owner's read-back must run as the mapped login"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks and $(...) must stay literal
+  assert_grep 'mark it ready with `GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr ready <number>`' "$brief" \
+    "a mapped owner's ready command must run as the mapped login"
+  printf 'remicaesar\n' > "$home/config/gh-accounts"
+  if FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-gh-bad owned-proj --mode direct-PR >/dev/null 2>&1; then
+    fail "a malformed mapping must refuse the brief rather than fall back to the active login"
+  fi
+  pass "fm-brief.sh: PR read-back and ready commands run as the mapped gh login"
+}
+
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
 # reference must render as plain prose with no dangling apostrophe artifact.
 test_no_mistakes_dod_wording() {
@@ -1476,6 +1507,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
+test_pr_based_dod_runs_as_mapped_gh_login
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete

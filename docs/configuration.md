@@ -916,7 +916,9 @@ A final newline is optional; a CR, any other control character, a third field, o
 Each mapped command runs with `GH_TOKEN` set, in that command's environment alone, to the token `gh auth token --hostname github.com --user <login>` returns for the stored login.
 That covers the merge, PR-ready recording, the merge poll, the contribution observer, `bin/fm-pr-state.sh`, `bin/fm-pr-reviewers.sh`, `bin/fm-crew-state.sh`'s PR state read, and teardown's merged-PR check.
 The active gh account, the gh configuration, and git credentials are never changed, and the token is never printed, logged, written to a file, or passed as an argument.
-Git fetches and pushes keep using git's own credential setup, and a worker's own `gh` or `gh-axi` commands and the no-mistakes pipeline are not covered.
+A ship worker's instructions also run its PR draft read-back and ready commands as the mapped login: they prefix that one `gh-axi` command with `GH_TOKEN="$(gh auth token --hostname github.com --user <login>)"`, so the worker's shell resolves the token and the instructions never contain it.
+A brief or promotion whose mapping is unusable is refused rather than rendered with a command that could only answer "not found".
+Git fetches and pushes keep using git's own credential setup, and a worker's other `gh` or `gh-axi` commands and the no-mistakes pipeline are not covered.
 
 ### Failures and inheritance
 
