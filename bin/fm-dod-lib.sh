@@ -403,18 +403,26 @@ There is no pull request, no \`gh-axi\` call, and no forge CI result to report: 
 EOF
 }
 
-# fm_dod_gh_axi <project-dir>
+# fm_dod_gh_axi <mode> <forge> <project-dir>
 # Prints the gh-axi invocation a worker pastes to read back and ready its PR.
-# When config/gh-accounts maps the owner of the project's github.com origin to a
+# Only the direct-PR and no-mistakes contracts off Gerrit render that command,
+# so every other mode and forge prints plain `gh-axi` without reading the
+# mapping. When config/gh-accounts maps the owner of the project's github.com origin to a
 # gh login, the invocation sets GH_TOKEN for that one command from the login's
 # stored token, so the token is resolved by the worker's shell and never printed
 # or written into the brief (bin/fm-gh-account-lib.sh owns the mapping). Any
-# other project prints plain `gh-axi`. An unusable mapping returns 1 with its
-# reason on stderr rather than handing the worker a command that can only
-# answer "not found".
-fm_dod_gh_axi() {  # <project-dir>
+# other project prints plain `gh-axi`. An unusable mapping, or a mapped login
+# with no stored token, returns 1 with its reason on stderr rather than handing
+# the worker a command that can only answer "not found".
+fm_dod_gh_axi() {  # <mode> <forge> <project-dir>
   local remote owner login rc=0
-  if ! remote=$(git -C "$1" remote get-url origin 2>/dev/null) \
+  case "$1:$2" in
+    *:gerrit | local-only:*)
+      printf 'gh-axi\n'
+      return 0
+      ;;
+  esac
+  if ! remote=$(git -C "$3" remote get-url origin 2>/dev/null) \
     || ! fm_pr_gh_account_load \
     || ! owner=$(fm_gh_account_owner_from_remote "$remote"); then
     printf 'gh-axi\n'
@@ -423,6 +431,12 @@ fm_dod_gh_axi() {  # <project-dir>
   login=$(fm_gh_account_login "$owner") || rc=$?
   case "$rc" in
     0)
+      if ! env -u GH_TOKEN -u GITHUB_TOKEN \
+        gh auth token --hostname "$FM_GH_ACCOUNT_HOST" --user "$login" >/dev/null 2>&1; then
+        printf 'error: gh login %s, mapped for GitHub owner %s in %s, has no stored token for %s; sign it in with gh auth login rather than switching the active account\n' \
+          "$login" "$owner" "$(fm_gh_account_file)" "$FM_GH_ACCOUNT_HOST" >&2
+        return 1
+      fi
       # shellcheck disable=SC2016  # the $(...) is literal brief text the worker's shell expands.
       printf 'GH_TOKEN="$(gh auth token --hostname %s --user %s)" gh-axi\n' "$FM_GH_ACCOUNT_HOST" "$login"
       ;;

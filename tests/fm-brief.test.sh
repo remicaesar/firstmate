@@ -355,9 +355,16 @@ test_pr_based_dod_requires_non_draft() {
 # config/gh-accounts maps to the project's GitHub owner; an unmapped owner keeps
 # plain gh-axi, and no token is ever rendered into the brief.
 test_pr_based_dod_runs_as_mapped_gh_login() {
-  local home id brief
+  local home id brief fakebin
   home="$TMP_ROOT/gh-account-home"
-  mkdir -p "$home/data" "$home/config" "$home/projects/owned-proj"
+  fakebin="$TMP_ROOT/gh-account-bin"
+  mkdir -p "$home/data" "$home/config" "$home/projects/owned-proj" "$fakebin"
+  cat > "$fakebin/gh" <<'GH'
+#!/usr/bin/env bash
+[ "$*" = "auth token --hostname github.com --user remicaesar" ] || exit 1
+echo fake-stored-token
+GH
+  chmod +x "$fakebin/gh"
   git -C "$home/projects/owned-proj" init -q
   git -C "$home/projects/owned-proj" remote add origin https://github.com/remicaesar/owned-proj.git
   id="brief-gh-unmapped"
@@ -367,8 +374,9 @@ test_pr_based_dod_runs_as_mapped_gh_login() {
     "an absent mapping must keep plain gh-axi"
   printf 'remicaesar remicaesar\n' > "$home/config/gh-accounts"
   id="brief-gh-mapped"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" owned-proj --mode no-mistakes >/dev/null 2>&1
+  PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" owned-proj --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
+  ! grep -q fake-stored-token "$brief" || fail "the token must never be written into the brief"
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks and $(...) must stay literal
   assert_grep '(`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>` must print `draft: no`' "$brief" \
     "a mapped owner's read-back must run as the mapped login"
@@ -378,6 +386,12 @@ test_pr_based_dod_runs_as_mapped_gh_login() {
   printf 'remicaesar\n' > "$home/config/gh-accounts"
   if FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-gh-bad owned-proj --mode direct-PR >/dev/null 2>&1; then
     fail "a malformed mapping must refuse the brief rather than fall back to the active login"
+  fi
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-gh-local owned-proj --mode local-only >/dev/null 2>&1 \
+    || fail "a local-only brief renders no gh-axi read-back, so a malformed mapping must not refuse it"
+  printf 'remicaesar unstored-login\n' > "$home/config/gh-accounts"
+  if PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-gh-unstored owned-proj --mode direct-PR >/dev/null 2>&1; then
+    fail "a mapped login with no stored token must refuse the brief rather than fall back to the active login"
   fi
   pass "fm-brief.sh: PR read-back and ready commands run as the mapped gh login"
 }

@@ -668,7 +668,7 @@ case "$MODE" in
     ;;
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
-GH_AXI=$(fm_dod_gh_axi "${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}/$REPO") || exit 1
+GH_AXI=$(fm_dod_gh_axi "$MODE" "$FORGE" "${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}/$REPO") || exit 1
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$GH_AXI") || exit 1
 
 cat > "$BRIEF" <<EOF
