@@ -1,0 +1,24 @@
+## flag ON: fixed status command (emitted by bin/fm-brief.sh) run in a plain worker shell
+exit=0 output=[]
+status file: working [at=1790000000]: setup done
+ledger: {"v":1,"ts":1793269373,"event":"task.status","task":"s-on-t1","state":"working","key":null,"text":" setup done"}
+
+## flag OFF
+exit=0 output=[]
+status file: working [at=1790000000]: setup done
+ledger files: []
+
+## flag ON, ledger unwritable (fleet-ledger.jsonl is a directory)
+exit=0 output=[]
+status file: working [at=1790000000]: setup done
+
+## flag ON, append fails (status path is a directory)
+exit=1 output=[bash: /private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.HhNxeq/s-af/home/state/s-af-t1.status: Is a directory]
+ledger: []
+
+## guard: 'appended' with usage error still exits 0 (caller is brace-free)
+appended bad-args exit=0
+## guard: other subcommands keep their failure status (usage error on capture with extra arg)
+capture bad-args exit=2
+## guard: dispatched with an unwritable ledger keeps exit 1
+capture (unwritable ledger) exit=1

@@ -1,0 +1,27 @@
+=== base status command through real Claude Code 2.1.312 (Claude Code) with Lovie hook (14b5a451c9) as PreToolUse
+{
+  "result": "The Bash call did not run, so I have no exit status to report.\n\nThe harness rejected the command before execution with: \"Unsupported shell expansion, subshell, here-document or background job requires review.\" The command contains a `{ ...; }` group and `||` inside it, which is likely what tripped the check. I did not rewrite or split it, because you asked for it verbatim and only as a single call.\n\nNothing was written. The status file and the `fm-fleet-ledger.sh` call were never reached.\n\nIf you want it to run, you can approve it in your permission settings or run it yourself in a terminal. I can also run it as separate commands, but that changes the command you specified, so I haven't done it without your go-ahead.",
+  "permission_denials": [
+    {
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_01EKozpVToNaZ9m7SAUCcM4q",
+      "tool_input": {
+        "command": "echo \"working [at=1790000000]: setup done\" >> '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.PpySgB/live-base/home/state/live-base-t1.status' && { [ ! -e '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.PpySgB/live-base/home/config/fleet-ledger' ] || '/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-base.62380Y/bin/fm-fleet-ledger.sh' appended '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.PpySgB/live-base/home/config' '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.PpySgB/live-base/home/state/live-base-t1.status' >/dev/null 2>&1 || true; }",
+        "description": "Run the verbatim status-append command"
+      }
+    }
+  ],
+  "is_error": false
+}
+status file after: []
+ledger after: []
+
+=== target status command through real Claude Code 2.1.312 (Claude Code) with Lovie hook (14b5a451c9) as PreToolUse
+{
+  "result": "The command ran once, verbatim, but I can't report its exit status. The Bash tool returned no output and no exit code. The command's stdout and stderr were sent to `/dev/null`, and I was asked not to run anything else, so I didn't re-run it to find out.\n\nWhether it succeeded is unknown from here. Both the `echo` append to the status file and the `fm-fleet-ledger.sh appended` call would need to exit 0 for the whole chain to succeed, and I haven't checked either. If you need the exit code, the next step is to run the same command with the `>/dev/null 2>&1` redirect removed, or to append `; echo \"exit=$?\"`.",
+  "permission_denials": [],
+  "is_error": false
+}
+status file after: [working [at=1790000000]: setup done]
+ledger after: [{"v":1,"ts":1793269408,"event":"task.status","task":"live-target-t1","state":"working","key":null,"text":" setup done"}]
+

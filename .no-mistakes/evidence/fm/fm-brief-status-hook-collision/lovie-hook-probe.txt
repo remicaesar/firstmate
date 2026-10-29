@@ -1,0 +1,11 @@
+Lovie bash-command-policy.sh @ lovieco/lovie 14b5a451c9 (2026-10-06), entry bash-policy.sh
+--- commands emitted by real bin/fm-brief.sh (filled as a worker fills them)
+BASE 451a728c status command       exit=0 decision=ask Unsupported shell expansion, subshell, here-document or background job requires review.
+FIX  ed253a02 status command       exit=0 decision=allow(no output) 
+--- hand probes from the issue
+plain echo append                  exit=0 decision=allow(no output) 
+[ ... ] || cmd                     exit=0 decision=allow(no output) 
+brace group alone                  exit=0 decision=ask Unsupported shell expansion, subshell, here-document or background job requires review.
+
+BASE cmd: echo "working [at=1790000000]: setup done" >> '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.uWR0qy/base-on/home/state/base-on-t1.status' && { [ ! -e '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.uWR0qy/base-on/home/config/fleet-ledger' ] || '/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-base.62380Y/bin/fm-fleet-ledger.sh' appended '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.uWR0qy/base-on/home/config' '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.uWR0qy/base-on/home/state/base-on-t1.status' >/dev/null 2>&1 || true; }
+FIX  cmd: echo "working [at=1790000000]: setup done" >> '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.R7bnfF/target-on/home/state/target-on-t1.status' && '/Users/emirmuratsezer/.no-mistakes/worktrees/bf0faa575906/01M63JQMXA79GKZ44REP7CQ28A/bin/fm-fleet-ledger.sh' appended '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.R7bnfF/target-on/home/config' '/private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-fleet-ledger.R7bnfF/target-on/home/state/target-on-t1.status' >/dev/null 2>&1
