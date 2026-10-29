@@ -13,13 +13,13 @@
 # The optional third argument is the task's full ship-branch name (a project's
 # registered prefix may replace the legacy `fm/` one); it defaults to `fm/<task-id>`
 # and is the immutable task branch rendered in every delivery contract.
-# The optional sixth argument is the gh-axi invocation the worker pastes for its
-# PR read-back and ready commands, from fm_dod_gh_axi; it defaults to plain
-# `gh-axi`.
 # The optional fifth argument is the task's base branch from bin/fm-brief.sh
 # --base-branch; empty means the repository default. A named base is the branch
 # the worker starts from, never pushes to, and targets with its pull request, and
 # fm_base_branch_valid refuses it where no pull request carries the work.
+# The optional sixth argument is the gh-axi invocation the worker pastes for its
+# PR read-back and ready commands, from fm_dod_gh_axi; it defaults to plain
+# `gh-axi`.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
