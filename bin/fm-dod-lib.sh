@@ -17,6 +17,9 @@
 # --base-branch; empty means the repository default. A named base is the branch
 # the worker starts from, never pushes to, and targets with its pull request, and
 # fm_base_branch_valid refuses it where no pull request carries the work.
+# The optional sixth argument is the gh-axi invocation the worker pastes for its
+# PR read-back and ready commands, from fm_dod_gh_axi; it defaults to plain
+# `gh-axi`.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
@@ -400,8 +403,50 @@ There is no pull request, no \`gh-axi\` call, and no forge CI result to report: 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-}
+# fm_dod_gh_axi <mode> <forge> <project-dir>
+# Prints the gh-axi invocation a worker pastes to read back and ready its PR.
+# Only the direct-PR and no-mistakes contracts off Gerrit render that command,
+# so every other mode and forge prints plain `gh-axi` without reading the
+# mapping. When config/gh-accounts maps the owner of the project's github.com origin to a
+# gh login, the invocation sets GH_TOKEN for that one command from the login's
+# stored token, so the token is resolved by the worker's shell and never printed
+# or written into the brief (bin/fm-gh-account-lib.sh owns the mapping). Any
+# other project prints plain `gh-axi`. An unusable mapping, or a mapped login
+# with no stored token, returns 1 with its reason on stderr rather than handing
+# the worker a command that can only answer "not found".
+fm_dod_gh_axi() {  # <mode> <forge> <project-dir>
+  local remote owner login rc=0
+  case "$1:$2" in
+    *:gerrit | local-only:*)
+      printf 'gh-axi\n'
+      return 0
+      ;;
+  esac
+  if ! remote=$(git -C "$3" remote get-url origin 2>/dev/null) \
+    || ! fm_pr_gh_account_load \
+    || ! owner=$(fm_gh_account_owner_from_remote "$remote"); then
+    printf 'gh-axi\n'
+    return 0
+  fi
+  login=$(fm_gh_account_login "$owner") || rc=$?
+  case "$rc" in
+    0)
+      if ! env -u GH_TOKEN -u GITHUB_TOKEN \
+        gh auth token --hostname "$FM_GH_ACCOUNT_HOST" --user "$login" >/dev/null 2>&1; then
+        printf 'error: gh login %s, mapped for GitHub owner %s in %s, has no stored token for %s; sign it in with gh auth login rather than switching the active account\n' \
+          "$login" "$owner" "$(fm_gh_account_file)" "$FM_GH_ACCOUNT_HOST" >&2
+        return 1
+      fi
+      # shellcheck disable=SC2016  # the $(...) is literal brief text the worker's shell expands.
+      printf 'GH_TOKEN="$(gh auth token --hostname %s --user %s)" gh-axi\n' "$FM_GH_ACCOUNT_HOST" "$login"
+      ;;
+    1) printf 'gh-axi\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<gh-axi>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} gh_axi=${6:-gh-axi}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
@@ -467,7 +512,7 @@ Ship branch: $branch
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\` that is ready for review, not a draft$pr_base.
-Before you report done, read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
+Before you report done, read the PR back from the forge and confirm it is not a draft (\`$gh_axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`$gh_axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 That \`done:\` is accepted only when this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
@@ -502,7 +547,7 @@ EOF
       fm_nm_driving_block "$forge"
       cat <<EOF
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft (\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft (\`$gh_axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`$gh_axi pr ready <number>\`.
 A draft cannot be merged, so a done report on one leaves the merge unasked.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.

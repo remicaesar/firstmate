@@ -6,7 +6,8 @@
 # docs/configuration.md "GitHub account per owner" owns the operator-facing
 # contract. Loaded on first use by bin/fm-pr-lib.sh's fm_pr_gh_as, which the
 # merge, PR-ready, merge-poll, contribution, state, reviewer, and teardown
-# GitHub reads all call through.
+# GitHub reads all call through. bin/fm-dod-lib.sh's fm_dod_gh_axi also reads
+# the selection to render a worker's PR read-back and ready commands.
 #
 # gh can hold several logins for github.com but answers every command with the
 # one active login, and a private repository is invisible to every other login:

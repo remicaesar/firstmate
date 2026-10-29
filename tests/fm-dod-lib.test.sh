@@ -382,6 +382,87 @@ test_pr_based_dod_draft_check_uses_gh_axi() {
   pass "PR-based DoD draft check uses gh-axi"
 }
 
+# The read-back and ready commands run as the gh login config/gh-accounts maps
+# to the project's owner; an absent file or an unnamed owner keeps today's text,
+# and the token is only ever expanded by the worker's shell, never written here.
+test_pr_based_dod_gh_axi_follows_owner_mapping() {
+  local home repo plain out mode gh_axi rc fakebin
+  home="$TMP_ROOT/gh-owner-home"
+  repo="$TMP_ROOT/gh-owner-repo"
+  fakebin="$TMP_ROOT/gh-owner-bin"
+  mkdir -p "$home/config" "$repo" "$fakebin"
+  cat > "$fakebin/gh" <<'GH'
+#!/usr/bin/env bash
+[ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] || exit 1
+[ "$*" = "auth token --hostname github.com --user remicaesar" ] || exit 1
+echo fake-stored-token
+GH
+  chmod +x "$fakebin/gh"
+  git -C "$repo" init -q
+  git -C "$repo" remote add origin git@github.com:RemiCaesar/firstmate.git
+  for mode in direct-PR no-mistakes; do
+    fm_dod_block "$mode" dod-gh-task > "$TMP_ROOT/plain-$mode.md"
+  done
+
+  mode=direct-PR
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo") || fail "absent mapping must not refuse"
+  [ "$gh_axi" = gh-axi ] || fail "absent mapping must keep plain gh-axi, got: $gh_axi"
+  printf 'other-owner other-login\n' > "$home/config/gh-accounts"
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo") || fail "unnamed owner must not refuse"
+  [ "$gh_axi" = gh-axi ] || fail "unnamed owner must keep plain gh-axi, got: $gh_axi"
+  for mode in direct-PR no-mistakes; do
+    plain="$TMP_ROOT/plain-$mode.md"
+    out="$TMP_ROOT/unmapped-$mode.md"
+    fm_dod_block "$mode" dod-gh-task '' none '' "$gh_axi" > "$out"
+    cmp -s "$plain" "$out" || fail "$mode: an unmapped owner must render today's DoD byte for byte"
+  done
+
+  printf '# owners\nremicaesar remicaesar\n' > "$home/config/gh-accounts"
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo") || fail "mapped owner must not refuse"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the $(...) must stay literal
+  [ "$gh_axi" = 'GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi' ] \
+    || fail "mapped owner must select its login for one command, got: $gh_axi"
+  for mode in direct-PR no-mistakes; do
+    out="$TMP_ROOT/mapped-$mode.md"
+    fm_dod_block "$mode" dod-gh-task '' none '' "$gh_axi" > "$out"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep '(`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>` must print `draft: no`' "$out" \
+      "$mode: the read-back must run as the mapped login"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep 'mark it ready with `GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr ready <number>`' "$out" \
+      "$mode: the ready command must run as the mapped login"
+  done
+
+  git -C "$repo" remote set-url origin https://gitlab.com/remicaesar/firstmate.git
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo") || fail "non-GitHub origin must not refuse"
+  [ "$gh_axi" = gh-axi ] || fail "non-GitHub origin must keep plain gh-axi, got: $gh_axi"
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$TMP_ROOT/no-such-project") || fail "missing clone must not refuse"
+  [ "$gh_axi" = gh-axi ] || fail "missing clone must keep plain gh-axi, got: $gh_axi"
+
+  git -C "$repo" remote set-url origin https://github.com/remicaesar/firstmate.git
+  printf 'remicaesar\n' > "$home/config/gh-accounts"
+  rc=0
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo" 2>"$TMP_ROOT/gh-owner.err") || rc=$?
+  [ "$rc" -ne 0 ] || fail "a malformed mapping must refuse rather than fall back, got: $gh_axi"
+  assert_grep "$home/config/gh-accounts line 1 is not" "$TMP_ROOT/gh-owner.err" "a malformed mapping must name the file"
+  for mode in local-only:none direct-PR:gerrit no-mistakes:gerrit; do
+    gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" fm_dod_gh_axi "${mode%%:*}" "${mode#*:}" "$repo") \
+      || fail "$mode renders no gh-axi read-back, so a malformed mapping must not refuse it"
+    [ "$gh_axi" = gh-axi ] || fail "$mode must keep plain gh-axi, got: $gh_axi"
+  done
+
+  mode=no-mistakes
+  printf 'remicaesar unstored-login\n' > "$home/config/gh-accounts"
+  rc=0
+  gh_axi=$(FM_HOME="$home" PATH="$fakebin:$PATH" GH_TOKEN=caller-token fm_dod_gh_axi "$mode" none "$repo" 2>"$TMP_ROOT/gh-owner.err") || rc=$?
+  [ "$rc" -ne 0 ] || fail "a mapped login with no stored token must refuse rather than fall back, got: $gh_axi"
+  [ -z "$gh_axi" ] || fail "a refused mapping must print no command, got: $gh_axi"
+  assert_grep "gh login unstored-login, mapped for GitHub owner remicaesar in $home/config/gh-accounts, has no stored token" "$TMP_ROOT/gh-owner.err" \
+    "a login with no stored token must be named with the mapping file"
+  ! grep -q fake-stored-token "$TMP_ROOT/gh-owner.err" || fail "the token must never be printed"
+  pass "PR-based DoD gh-axi follows the per-owner gh login mapping"
+}
+
 # A scout spawned on a named base keeps that base through promotion: the ship
 # instructions start from it and the PR targets it; local-only cannot carry it.
 test_promotion_keeps_the_recorded_base_branch() {
@@ -442,6 +523,7 @@ test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
 test_pr_based_dod_draft_check_uses_gh_axi
+test_pr_based_dod_gh_axi_follows_owner_mapping
 test_promotion_keeps_the_recorded_base_branch
 
 # The launch role is the generated text a worker receives. It must keep the
