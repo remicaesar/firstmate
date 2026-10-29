@@ -4,9 +4,10 @@
 # docs/fleet-ledger.md owns the public record contract (file, events, fields,
 # limits). This header owns only the writer mechanics.
 #
-# Off by default. Every producer guards its call with one file test on the
-# home's config/fleet-ledger flag, so while the flag is absent this script is
-# never run. It repeats that test so a direct invocation writes nothing.
+# Off by default. Every producer except a worker's status command guards its
+# call with one file test on the home's config/fleet-ledger flag, so while the
+# flag is absent this script is never run from there. It repeats that test, so
+# the unguarded status command and a direct invocation write nothing.
 #
 # Producers:
 #   bin/fm-brief.sh              appended (in every worker's status command,
@@ -50,7 +51,8 @@
 # home exactly as the other bin/ scripts do.
 #
 # Exit status: 0 on success or when off, 2 on a usage error, 1 when a record
-# could not be written. Producers ignore a failure so it never changes theirs.
+# could not be written. Producers ignore a failure so it never changes theirs;
+# appended always exits 0 for its brace-free caller.
 set -u
 # Byte semantics for offsets and lengths; jq still reads the text as UTF-8.
 export LC_ALL=C
@@ -84,6 +86,9 @@ case "$cmd" in
   cleaned_up) { [ "$#" -eq 2 ] && task_ok "$2"; } || usage ;;
   capture) [ "$#" -eq 1 ] || usage ;;
   appended)
+    # A worker's status command chains this call straight after its append,
+    # so appended always exits 0 and a ledger problem never fails that append.
+    trap 'exit 0' EXIT
     [ "$#" -eq 3 ] && [ -n "$2" ] || usage
     case "$3" in /*/*.status) ;; *) usage ;; esac
     APPENDED_TASK=${3##*/}
@@ -194,7 +199,7 @@ fi
 
 load_libs || exit 1
 fm_lock_acquire_wait "$LOCK" || exit 1
-trap 'fm_lock_release "$LOCK"' EXIT
+trap 'fm_lock_release "$LOCK"; [ "$cmd" != appended ] || exit 0' EXIT
 rc=0
 # shellcheck disable=SC2016 # $names below are jq variables, not shell ones.
 case "$cmd" in
