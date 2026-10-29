@@ -1,0 +1,14 @@
+rendered read-back command (number 8 substituted): GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view 8
+--- worker shell identity: emir-lovie
+--- BEFORE (old brief text): gh-axi pr view 8
+error: "Repository \"remicaesar/qith\" not found"
+code: REPO_NOT_FOUND
+help[1]: Run `gh-axi repo list` to see your repositories
+exit=1
+--- AFTER (rendered brief text): GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view 8
+  number: 8
+  title: "ci: add minimal GitHub Actions workflow"
+  state: merged
+  author: remicaesar
+  draft: no
+exit=0

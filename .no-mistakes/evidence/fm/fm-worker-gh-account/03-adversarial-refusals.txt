@@ -1,0 +1,26 @@
+=== config/gh-accounts: remicaesar never-signed-in-xyz   (login with no stored token, real gh)
+$ fm-brief.sh adv-unstored-dpr firstmate --mode direct-PR
+  error: gh login never-signed-in-xyz, mapped for GitHub owner remicaesar in /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.fEgvO6/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+  exit=1 brief-exists=no
+$ fm-brief.sh adv-unstored-nm firstmate --mode no-mistakes
+  error: gh login never-signed-in-xyz, mapped for GitHub owner remicaesar in /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.fEgvO6/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+  exit=1 brief-exists=no
+$ fm-brief.sh adv-unstored-local firstmate --mode local-only
+  exit=0 brief-exists=yes
+=== config/gh-accounts: remicaesar   (malformed: one field)
+$ fm-brief.sh adv-bad-dpr firstmate --mode direct-PR
+  error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.fEgvO6/config/gh-accounts line 1 is not "<owner> <login>"
+  exit=1 brief-exists=no
+$ fm-brief.sh adv-bad-nm firstmate --mode no-mistakes
+  error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.fEgvO6/config/gh-accounts line 1 is not "<owner> <login>"
+  exit=1 brief-exists=no
+$ fm-brief.sh adv-bad-local firstmate --mode local-only
+  exit=0 brief-exists=yes
+$ fm-brief.sh adv-bad-gerrit firstmate --mode no-mistakes --forge gerrit --shape squash
+  exit=0 brief-exists=yes
+$ fm-brief.sh adv-bad-gerrit-dpr firstmate --mode direct-PR --forge gerrit --shape squash
+  exit=0 brief-exists=yes
+=== config/gh-accounts removed (absent)
+$ fm-brief.sh adv-absent firstmate --mode direct-PR
+  exit=0 brief-exists=yes
+  `gh-axi pr view <number>`

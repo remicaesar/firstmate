@@ -1,0 +1,9 @@
+$ fm-promote.sh prom-mapped --mode direct-PR --yolo off   # gh-accounts: remicaesar remicaesar
+  exit=0 kind=ship
+  ship-instructions: `GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>`
+  ship-instructions: `GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr ready <number>`
+$ fm-promote.sh prom-unstored --mode direct-PR --yolo off   # gh-accounts: remicaesar never-signed-in-xyz
+  error: gh login never-signed-in-xyz, mapped for GitHub owner remicaesar in /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-lab.fEgvO6/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+  exit=1 kind=scout
+$ fm-promote.sh prom-bad-local --mode local-only --yolo off   # gh-accounts: remicaesar
+  exit=0 kind=ship

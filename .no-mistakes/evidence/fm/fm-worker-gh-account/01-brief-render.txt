@@ -1,0 +1,14 @@
+$ fm-brief.sh live-direct-PR firstmate --mode direct-PR   # config/gh-accounts: remicaesar remicaesar
+exit=0
+`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>`
+`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr ready <number>`
+token-like strings in brief: 0
+$ fm-brief.sh live-no-mistakes firstmate --mode no-mistakes   # config/gh-accounts: remicaesar remicaesar
+exit=0
+`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr view <number>`
+`GH_TOKEN="$(gh auth token --hostname github.com --user remicaesar)" gh-axi pr ready <number>`
+token-like strings in brief: 0
+$ fm-brief.sh live-unmapped other --mode direct-PR   # origin owner someone-else, unmapped
+exit=0
+`gh-axi pr view <number>`
+`gh-axi pr ready <number>`
