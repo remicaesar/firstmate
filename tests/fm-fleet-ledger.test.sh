@@ -266,6 +266,20 @@ test_worker_status_line_with_the_flag_absent() {
   pass "flag off: the worker's status command is a plain append and leaves no ledger file, offset, or lock"
 }
 
+test_worker_status_command_is_a_plain_chain() {
+  local cmd
+  make_case plain-chain on
+  mkdir -p "$HOME_DIR/data"
+  cmd=$(worker_status_command working 'setup done')
+  # Project Bash policy hooks ask on shell they cannot model, so the command
+  # carries no brace group, subshell, substitution, here-doc, or background job.
+  case "$cmd" in
+    *'{'*|*'}'*|*'('*|*')'*|*'`'*|*'<<'*|*'&') fail "the worker status command is not a plain chain: $cmd" ;;
+  esac
+  case "$cmd" in *' & '*|*'&&&'*|*';'*) fail "the worker status command backgrounds or sequences a step: $cmd" ;; esac
+  pass "the worker status command is a plain && chain of simple commands"
+}
+
 test_flag_off_writes_nothing() {
   local leftovers
   make_case off-lifecycle off
@@ -284,4 +298,5 @@ test_worker_status_line_is_recorded_under_a_relative_config_override
 test_worker_status_command_fails_when_the_append_fails
 test_worker_status_line_lands_when_the_ledger_fails
 test_worker_status_line_with_the_flag_absent
+test_worker_status_command_is_a_plain_chain
 test_flag_off_writes_nothing
