@@ -522,7 +522,7 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state
+  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state busy_kind=''
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -552,11 +552,14 @@ inbox_steer_check() {  # <window> <task>
   tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || tail40=
   if window_is_busy "$w" "$tail40"; then
     [ "$verb" != retry ] || return 0
+    # Already surfaced as stuck-busy: wait silently and ring once it is idle.
+    ! fm_task_inbox_busy_escalated "$STATE" "$task" "$rec" || return 0
     if ! count=$(fm_task_inbox_record_busy "$STATE" "$task" "$rec"); then
       [ -f "$rec" ] || return 0
       reason="stale: $w (steering-inbox busy bookkeeping unwritable: ${rec%/*}/.busy-state cannot be written while $rec stays unhandled; inspect the inbox directory)"
     elif [ "$count" -ge "$(fm_task_inbox_busy_max)" ]; then
       reason="stale: $w (unread firstmate instruction: stuck-busy after $count consecutive busy-deferred due doorbells; $rec stays unhandled and no doorbell was typed; inspect the worker)"
+      busy_kind=busy
     else
       return 0
     fi
@@ -603,7 +606,7 @@ inbox_steer_check() {  # <window> <task>
         return 0
       fi
       fm_wake_append stale "$w" "$reason" || exit 1
-      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
+      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec" ${busy_kind:+"$busy_kind"}; then
         echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
         exit 1
       fi

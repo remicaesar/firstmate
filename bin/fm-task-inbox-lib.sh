@@ -30,7 +30,9 @@
 #   <task>.inbox/.ring-state   watcher re-ring ladder: "<msg>\t<count>\t<epoch>"
 #   <task>.inbox/.busy-state   consecutive busy deferrals: "<msg>\t<count>"
 #   <task>.inbox/.escalated    oldest-message name already surfaced as stale,
-#                              so later polls suppress another escalation
+#                              so later polls suppress another escalation;
+#                              "<msg>\tbusy" marks a stuck-busy surfacing,
+#                              which leaves the ladder live
 #   <task>.inbox/.retry-ring   name of a fire-and-forget record still owed its
 #                              one retry ring (fm_task_inbox_mark_retry)
 #
@@ -57,7 +59,10 @@
 # by a busy pane consume a separate durable consecutive-poll budget,
 # FM_TASK_INBOX_BUSY_MAX. At that bound the same escalation path surfaces a
 # stuck-busy reason without typing. A non-busy due check or acknowledgement resets
-# this budget. Fire-and-forget retries remain outside escalation. A positively
+# this budget. A stuck-busy surfacing is recorded as its own marker kind, so it
+# fires once per record without silencing delivery: later busy checks for that
+# record wait silently, and the first non-busy due check rings it as usual.
+# Fire-and-forget retries remain outside escalation. A positively
 # dead or missing endpoint skips delivery and the ladder and escalates directly.
 # This library owns the schedule, durable budgets, and escalation marker.
 # If delivery-attempt or busy-deferral bookkeeping fails while the record remains unhandled,
@@ -446,7 +451,8 @@ fm_task_inbox_clear_retry() {  # <state-dir> <task-id> <record-path>
 
 # The re-ring ladder decision for one task. Prints exactly one of:
 #   quiet                     nothing due (healthy, within grace or spacing,
-#                             or already escalated for the current oldest)
+#                             or already escalated for the current oldest;
+#                             a stuck-busy marker does not count here)
 #   ring <record-path>        one doorbell re-ring is due
 #   escalate <record-path> <count>   attempt budget spent; surface as stale
 #   retry <record-path>       a fire-and-forget record's one retry ring is due
@@ -534,13 +540,23 @@ EOF
 # Mark the current oldest as escalated after its stale wake is durably queued,
 # suppressing another wake on later polls. Wake-before-marker ordering favors
 # at-least-once recovery: a crash or marker failure can cause a rare duplicate;
-# stuck-crewmate-recovery owns the message from here.
-fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path>
-  local dir
+# stuck-crewmate-recovery owns the message from here. With `busy`, the marker
+# suppresses only another stuck-busy wake and leaves the ladder live, so the
+# record still rings once its worker stops being busy.
+fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path> [busy]
+  local dir marker=${3##*/}
   dir=$(fm_task_inbox_dir "$1" "$2")
   [ -d "$dir" ] || return 0
-  if ! { printf '%s\n' "${3##*/}" > "$dir/.escalated"; } 2>/dev/null; then
+  [ "${4:-}" != busy ] || marker="$marker$(printf '\t')busy"
+  if ! { printf '%s\n' "$marker" > "$dir/.escalated"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi
+}
+
+# Whether <record>'s stuck-busy wake has already been surfaced.
+fm_task_inbox_busy_escalated() {  # <state-dir> <task-id> <record-path>
+  local dir
+  dir=$(fm_task_inbox_dir "$1" "$2")
+  [ "$(cat "$dir/.escalated" 2>/dev/null || true)" = "${3##*/}$(printf '\t')busy" ]
 }
