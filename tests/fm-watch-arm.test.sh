@@ -1267,7 +1267,9 @@ test_take_over_preserves_downtime_from_watcher_self_exit() {
 # A watcher defers a TERM until the command it is running finishes, so a
 # take-over can land while the watcher it stops is busy in a slow command.
 # A one-shot slow `cat` of the lock pid at the top of the old watcher's poll
-# holds that TERM past the stop's short wait. The take-over must still confirm
+# holds that TERM past the stop's short wait (50 polls of 0.1s, which runs to
+# about 10s on a loaded host), so it sleeps well beyond that wait while staying
+# far below the stall bound. The take-over must still confirm
 # its own stop and restore the episode main acknowledged; reopening it made
 # every fresh cycle re-announce recovery to main with an empty queue, turn
 # after turn.
@@ -1285,7 +1287,7 @@ test_take_over_restores_acknowledgement_when_the_stop_lands_late() {
 if [ "\$#" -eq 1 ] && [ "\$1" = "$state/.watch.lock/pid" ] \\
   && mv "$dir/slow-cat" "$dir/slow-cat.claimed" 2>/dev/null; then
   : > "$dir/slow-cat.sleeping"
-  sleep 9
+  sleep 25
 fi
 exec "$real_cat" "\$@"
 SH
