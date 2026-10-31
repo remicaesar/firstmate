@@ -632,7 +632,9 @@ test_harness_switch_moves_the_record_and_clears_prior_wiring() {
   local dir out rc
   dir=$(new_case switch rl4)
   add_ship_task "$dir" rl4 claude
-  # Wiring the previous claude incarnation left in the worktree.
+  # Wiring the previous claude incarnation left: its firstmate-owned settings
+  # file, plus the untracked worktree hook an older spawn wrote.
+  printf '{"hooks":{}}\n' > "$dir/home/state/rl4.claude-settings.json"
   mkdir -p "$dir/wt/.claude"
   printf '{"hooks":{}}\n' > "$dir/wt/.claude/settings.local.json"
   printf 'codex' > "$dir/fake/becomes"
@@ -640,12 +642,34 @@ test_harness_switch_moves_the_record_and_clears_prior_wiring() {
   expect_code 0 "$rc" "a harness switch should succeed"$'\n'"$out"
   assert_contains "$out" "harness=codex from=claude" "the outcome should name both harnesses"
   [ "$(meta_field "$dir" rl4 harness)" = codex ] || fail "the record should follow the switch"
-  [ ! -e "$dir/wt/.claude/settings.local.json" ] \
+  [ ! -e "$dir/home/state/rl4.claude-settings.json" ] \
     || fail "the previous harness's per-task wiring must be cleared on a switch"
+  [ ! -e "$dir/wt/.claude/settings.local.json" ] \
+    || fail "an older spawn's untracked worktree hook must be cleared on a switch"
   assert_grep "codex" "$dir/fake/literal" "the replacement launch should be the new harness"
   [ "$(journal_field "$dir" rl4 from_harness)" = claude ] || fail "the journal should record the origin harness"
   [ "$(journal_field "$dir" rl4 to_harness)" = codex ] || fail "the journal should record the target harness"
   pass "fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent"
+}
+
+test_relaunch_keeps_a_tracked_claude_settings_local() {
+  local dir out rc before
+  dir=$(new_case trackedlocal rl37)
+  add_ship_task "$dir" rl37 claude
+  mkdir -p "$dir/wt/.claude"
+  printf '{"permissions":{"allow":["Bash(make test)"]}}\n' > "$dir/wt/.claude/settings.local.json"
+  git -C "$dir/wt" add -f .claude/settings.local.json
+  git -C "$dir/wt" commit -q -m "track project claude settings"
+  before=$(cat "$dir/wt/.claude/settings.local.json")
+  out=$(run_control "$dir" rl37 relaunch --note "same runtime again"); rc=$?
+  expect_code 0 "$rc" "a claude relaunch should succeed"$'\n'"$out"
+  [ "$(cat "$dir/wt/.claude/settings.local.json" 2>/dev/null)" = "$before" ] \
+    || fail "relaunch retired the project's tracked .claude/settings.local.json"
+  [ -z "$(git -C "$dir/wt" status --porcelain)" ] \
+    || fail "relaunch left the worktree dirty: $(git -C "$dir/wt" status --porcelain)"
+  assert_present "$dir/home/state/rl37.claude-settings.json" \
+    "the replacement claude launch should carry its own settings file"
+  pass "fm-control relaunch: a project's tracked .claude/settings.local.json survives a claude relaunch"
 }
 
 test_harness_switch_does_not_carry_the_old_profile_axes() {
@@ -856,8 +880,7 @@ test_wiring_removal_failure_refuses_before_replacement_arm() {
   local dir hook out rc real_rm
   dir=$(new_case wiring-failure rl29)
   add_ship_task "$dir" rl29 claude
-  hook="$dir/wt/.claude/settings.local.json"
-  mkdir -p "${hook%/*}"
+  hook="$dir/home/state/rl29.claude-settings.json"
   printf '{}\n' > "$hook"
   real_rm=$(command -v rm)
   make_rm_failure_stub "$dir"
@@ -1413,7 +1436,7 @@ test_prepublication_abort_retires_replacement_wiring_and_busy_state() {
   expect_code 1 "$rc" "a failed metadata publication should fail closed"$'\n'"$out"
   [ "$(meta_field "$dir" rl28 harness)" = claude ] \
     || fail "a failed publication should retain the prior durable record"
-  [ ! -e "$dir/wt/.claude/settings.local.json" ] \
+  [ ! -e "$dir/home/state/rl28.claude-settings.json" ] \
     || fail "an aborted replacement should remove its harness wiring"
   [ ! -e "$dir/home/state/rl28.busy-gen" ] \
     || fail "an aborted replacement should retire its busy generation"
@@ -1771,8 +1794,7 @@ test_spawn_relaunch_refuses_a_pending_authoritative_close() {
   meta="$dir/home/state/rl36.meta"
   printf 'spawn_gen=spawn-pending\n' >> "$meta"
   cp "$meta" "$dir/meta.before"
-  mkdir -p "$dir/wt/.claude"
-  printf 'prior wiring\n' > "$dir/wt/.claude/settings.local.json"
+  printf 'prior wiring\n' > "$dir/home/state/rl36.claude-settings.json"
   marker="$dir/home/state/rl36.backlog-close"
   printf 'id=rl36\ndata=%s\nspawn_gen=spawn-pending\narg=--note\narg=local%%20main\n' \
     "$dir/home/data" > "$marker"
@@ -1784,7 +1806,7 @@ test_spawn_relaunch_refuses_a_pending_authoritative_close() {
     "the refusal should identify the close that still owns the task"
   cmp -s "$dir/meta.before" "$meta" \
     || fail "pending-close refusal replaced the task incarnation"
-  assert_grep 'prior wiring' "$dir/wt/.claude/settings.local.json" \
+  assert_grep 'prior wiring' "$dir/home/state/rl36.claude-settings.json" \
     "pending-close refusal cleared the prior worker wiring"
   assert_present "$marker" "pending-close refusal discarded the authoritative close"
   pass "fm-spawn --relaunch: pending closes refuse before replacement begins"
@@ -2396,6 +2418,7 @@ test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
 test_relaunch_requires_a_note_for_a_ship_task
 test_harness_switch_moves_the_record_and_clears_prior_wiring
+test_relaunch_keeps_a_tracked_claude_settings_local
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
