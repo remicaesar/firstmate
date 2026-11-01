@@ -233,6 +233,8 @@ A watcher close leaves an announced downtime episode announced, while a successf
 An announced handling episode becomes pending downtime on the same generation because its handling turn may have been interrupted.
 That handling republication gives a successor exactly one recovery presentation without orphaning the acknowledgement already printed for that generation.
 A watcher stopped so an arm can take its cycle over (`bin/fm-watch-arm.sh --take-over`) publishes downtime like any close, but the taking arm restores an acknowledged episode that stop reopened only when the taken-over arm's cycle-ledger row for that exact arm and watcher records the watcher ending by the take-over's TERM and no wake was appended in between.
+The watcher runs the TERM only after its current command returns, so the taking arm keeps waiting for a stopped watcher that still holds the lock under the same identity below the stall bound, the rule an attached arm follows a slow holder by.
+Abandoning that wait early skipped the restore while the late TERM still reopened the episode, so every fresh cycle re-announced recovery to main with an empty queue.
 The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary recovery wake, while take-over still proceeds.
 Any other episode is left for the next cycle's arm check.
 
@@ -455,7 +457,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 - The self-healing moved-generation acknowledgement that consumes its handled rows and names its remedy.
 - The already-acknowledged confirmation no-op for a matching generation, with its mismatched-generation, dead-pid, and lock-mismatch rejections preserved.
 - The manual-restart generation churn that makes a confirmation for the churned generation report a mismatch, which an arm check without a reopen leaves in place.
-- A take-over that stays quiet after a confirmed TERM, still surfaces queued work and self-exit downtime, and attaches without stopping a cycle the named arm does not own.
+- A take-over that stays quiet after a confirmed TERM, including one the stopped watcher runs late behind a slow command, still surfaces queued work and self-exit downtime, and attaches without stopping a cycle the named arm does not own.
 - The disposable-checkout arm refusal.
 - The home-gone and state-gone watcher exits.
 - The test reaper that stops a watcher armed for a temporary home.

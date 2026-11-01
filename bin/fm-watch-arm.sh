@@ -76,8 +76,10 @@
 # arm would, and otherwise this arm owns a fresh cycle as a plain arm does.
 # Recovery restoration follows docs/watcher-continuity.md "Generation reuse";
 # an unconfirmed stop leaves downtime for the fresh cycle's recovery check.
-# Any other watcher, or one that outlives the stop,
-# is attached to exactly as a plain arm attaches.
+# A stopped watcher that defers the TERM behind a slow command is followed as
+# attach follows a slow holder, so its late exit still restores. Any other
+# watcher, or one that stalls past that rule, is attached to exactly as a
+# plain arm attaches.
 #
 # --stop: the same home-scoped stop without re-arming, for an owner that ends
 # its own supervision cycle on purpose (the supervision host's park boundary,
@@ -551,17 +553,34 @@ fi
 # Stop the watcher the named arm owns, by its locked identity, and wait for it
 # to exit (header, --take-over). Returns 3 after printing the reason that cycle
 # delivered before the stop landed, 0 once it stopped without delivering, and
-# 1 when it was not stopped (its handover state was unreadable, or it outlived
-# the stop), which leaves it to the plain attach below.
+# 1 when it was not stopped (its handover state was unreadable, or it stalled
+# without exiting), which leaves it to the plain attach below.
 take_over_cycle() {  # <watcher-pid> <identity>
-  local pid=$1 i owner_signal
+  local pid=$1 i grace owner_signal
   cycle_begin "$pid" attached "$2"
   fm_recovery_marker_handover_snapshot "$STATE/.watcher-down" || return 1
   if attached_holder_live "$pid"; then
     kill -TERM "$pid" 2>/dev/null || true
   fi
+  # bash runs the TERM only once the watcher's current foreground command
+  # returns, so a watcher busy in a slow poll step outlives a short wait.
+  # Abandoning the stop there skipped the restore below while the TERM still
+  # landed and reopened main's acknowledged episode. Past the short wait, keep
+  # following it by attach_and_wait's slow-holder rule: while it holds the lock
+  # under this identity below the stall bound. Once it no longer does, its
+  # exit gets the short wait again.
   i=0
-  while [ "$i" -lt 50 ] && fm_pid_alive "$pid"; do
+  grace=0
+  while fm_pid_alive "$pid"; do
+    if [ "$i" -ge 50 ]; then
+      if attached_holder_live "$pid" && [ "$(fm_path_age "$BEAT")" -lt "$STALL_BOUND" ]; then
+        grace=0
+      elif [ "$grace" -ge 50 ]; then
+        break
+      else
+        grace=$((grace + 1))
+      fi
+    fi
     sleep 0.1
     i=$((i + 1))
   done

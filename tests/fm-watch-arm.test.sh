@@ -1264,6 +1264,78 @@ test_take_over_preserves_downtime_from_watcher_self_exit() {
   pass "watch-arm: takeover preserves self-exit downtime and surfaces a recovery wake"
 }
 
+# A watcher defers a TERM until the command it is running finishes, so a
+# take-over can land while the watcher it stops is busy in a slow command.
+# A one-shot slow `cat` of the lock pid at the top of the old watcher's poll
+# holds that TERM past the stop's short wait (50 polls of 0.1s, which runs to
+# about 10s on a loaded host), so it sleeps well beyond that wait while staying
+# far below the stall bound. The take-over must still confirm
+# its own stop and restore the episode main acknowledged; reopening it made
+# every fresh cycle re-announce recovery to main with an empty queue, turn
+# after turn.
+test_take_over_restores_acknowledgement_when_the_stop_lands_late() {
+  local dir home state fakebin owner watcher armout acknowledged real_cat i
+  dir=$(make_case take-over-late-stop)
+  home="$dir/home"
+  mkdir -p "$home"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  real_cat=$(command -v cat)
+  cat > "$fakebin/cat" <<SH
+#!/usr/bin/env bash
+if [ "\$#" -eq 1 ] && [ "\$1" = "$state/.watch.lock/pid" ] \\
+  && mv "$dir/slow-cat" "$dir/slow-cat.claimed" 2>/dev/null; then
+  : > "$dir/slow-cat.sleeping"
+  sleep 25
+fi
+exec "$real_cat" "\$@"
+SH
+  chmod +x "$fakebin/cat"
+  start_rearm_arm "$home" "$state" "$fakebin" "$dir/owner.out" "$$"
+  owner=$ARM_PID
+  watcher=$(cat "$state/.watch.lock/pid")
+  append_wake "$state" signal take-over "signal: fixture handled by main"
+  ack_wakes "$state" >/dev/null || fail "fixture: could not acknowledge wake"
+  acknowledged=$(cat "$state/.watcher-down")
+  case "$acknowledged" in acked:*) ;; *) fail "fixture: the episode was not acknowledged: $acknowledged" ;; esac
+  : > "$dir/slow-cat"
+  i=0
+  while [ "$i" -lt 200 ] && [ ! -e "$dir/slow-cat.sleeping" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -e "$dir/slow-cat.sleeping" ] || fail "the old watcher never entered its slow command"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" \
+    "$WATCH_ARM" --take-over "$owner" > "$armout" &
+  ARM_PID=$!
+  i=0
+  while [ "$i" -lt "$REARM_REPORT_POLLS" ]; do
+    grep -qE '^watcher: started pid=|^check: rearm-resurface|^watcher: FAILED' "$armout" && break
+    is_live_non_zombie "$ARM_PID" || break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  ! is_live_non_zombie "$watcher" || fail "the take-over left the old watcher running"
+  grep -q "arm_pid=$owner	watcher_pid=$watcher	.*signal=TERM" "$state/.watch-cycle-exits.log" \
+    || fail "fixture: the owner did not record the take-over's TERM: $(cat "$state/.watch-cycle-exits.log")"
+  grep -q '^watcher: started pid=' "$armout" \
+    || fail "the late stop did not leave the take-over owning a fresh cycle: $(cat "$armout")"
+  sleep 3
+  ! grep -q '^check: rearm-resurface' "$armout" \
+    || fail "the late stop re-announced an acknowledged episode: $(cat "$armout")"
+  is_live_non_zombie "$ARM_PID" || fail "the taken-over cycle closed with no new work: $(cat "$armout")"
+  [ "$(cat "$state/.watcher-down")" = "$acknowledged" ] \
+    || fail "the late stop reopened the acknowledged episode: $(cat "$state/.watcher-down")"
+  grep -q "watcher_pid=$watcher	.*reason=taken-over	" "$state/.watch-cycle-exits.log" \
+    || fail "the taking arm did not record a confirmed take-over: $(cat "$state/.watch-cycle-exits.log")"
+  kill -TERM "$ARM_PID" 2>/dev/null || true
+  wait_for_exit "$ARM_PID" 50 >/dev/null 2>&1 || true
+  pass "watch-arm: a take-over whose stop lands late still restores the acknowledged episode"
+}
+
 test_downtime_marker_does_not_follow_symlink() {
   local dir home state fakebin armout watcher_pid sentinel
   dir=$(make_case downtime-marker-symlink)
@@ -1614,3 +1686,4 @@ test_handling_delivered_rejects_a_superseded_generation
 test_take_over_attaches_to_a_cycle_the_named_arm_does_not_own
 test_take_over_owns_a_fresh_cycle_and_keeps_queued_work_surfacing
 test_take_over_preserves_downtime_from_watcher_self_exit
+test_take_over_restores_acknowledgement_when_the_stop_lands_late
