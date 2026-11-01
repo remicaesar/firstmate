@@ -1,0 +1,39 @@
+===== herdr lab pane: case=tpl
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Haiku 5.5 · Claude Team
+ ▝▝   ▝▝   $LAB/tpl/wt
+❯ : Firstmate operational input waiting: read '$LAB/tp
+  l/home/state/operational-inbox/1793494472-d89743a11cbb56b3.msg' and handle its contents as Firstmate operational
+  input.
+  Read 1 file
+⏺ READY
+✻ Crunched for 4s · done 3:55 AM
+ ☀  Clear  8% of context  81.5k / 1M   last turns █                                                                [-]
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+===== herdr lab pane: case=rawu
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Haiku 5.5 · Claude Team
+ ▝▝   ▝▝   $LAB/rawu/wt
+❯ Reply with exactly the word READY and nothing else. Do not use tools.
+⏺ READY
+✻ Worked for 2s · done 3:55 AM
+ ☀  Clear  5% of context  45.5k / 1M   last turns █                                                                [-]
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+===== herdr lab pane: case=rawt
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Haiku 5.5 · Claude Team
+ ▝▝   ▝▝   $LAB/rawt/wt
+❯ Reply with exactly the word READY and nothing else. Do not use tools.
+⏺ READY
+✻ Sautéed for 2s · done 3:55 AM
+ ☀  Clear  4% of context  42.7k / 1M   last turns █                                                                [-]
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

@@ -1,0 +1,2 @@
+retire on rawu (tracked=[]): rc=0 file=removed status=[]
+retire on tpl (tracked=[.claude/settings.local.json]): rc=0 file=kept status=[]

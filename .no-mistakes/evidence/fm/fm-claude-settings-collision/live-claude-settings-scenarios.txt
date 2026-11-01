@@ -1,0 +1,38 @@
+Claude: 2.1.316 (Claude Code)  herdr: herdr 0.9.5
+
+===== case=tpl id=clt1
+spawn warning lines:
+  (none)
+turn-ended marker: PRESENT
+busy-gen file: present
+busy classify: idle claude-hook
+claude-settings.json in state: present
+git status --porcelain: []
+settings.local.json tracked: [.claude/settings.local.json]
+tracked file byte-identical: OK
+git diff vs HEAD on .claude: none
+project's own Stop hook log: project-stop
+
+===== case=rawu id=clr1
+spawn warning lines:
+  (none)
+turn-ended marker: PRESENT
+busy-gen file: present
+busy classify: idle claude-hook
+claude-settings.json in state: absent
+git status --porcelain: []
+settings.local.json tracked: []
+project's own Stop hook log: (none)
+
+===== case=rawt id=clr2
+spawn warning lines:
+warning: $LAB/rawt/wt tracks .claude/settings.local.json, so this raw claude launch for clr2 runs without firstmate's turn-end and busy hooks; use the claude adapter to keep them
+turn-ended marker: absent
+busy-gen file: absent
+busy classify: unknown missing
+claude-settings.json in state: absent
+git status --porcelain: []
+settings.local.json tracked: [.claude/settings.local.json]
+tracked file byte-identical: OK
+git diff vs HEAD on .claude: none
+project's own Stop hook log: project-stop
