@@ -879,6 +879,10 @@ A raw Claude launch command refuses if its leading assignments set `CLAUDE_CONFI
 The assignment would override the pin.
 The refusal names the variable; remove that assignment from the raw command, or change or remove `config/claude-account`.
 
+A raw Claude launch command never reaches the `--settings` flag that carries Firstmate's turn-end and busy hooks, so Firstmate writes those hooks into the worktree's `.claude/settings.local.json` instead.
+When the project tracks that file, Firstmate leaves it untouched, does not arm the busy record, and prints a warning: that raw launch runs without turn-end or busy signals.
+Use the `claude` adapter rather than a raw command to keep them in such a project.
+
 Before any worker endpoint, local copy, or task record exists, and before a relaunch stops the running worker, Firstmate asks the runner itself whether the pinned account is signed in: `claude auth status` for Claude, and `pi auth check --provider <provider> --json --no-refresh` for Pi, falling back to `pi --list-models <provider>` for a provider an extension registers.
 The check runs with only `HOME`, `PATH`, `TMPDIR`, `USER`, `LOGNAME`, and the pinned root in its environment, so a credential variable in firstmate's own environment cannot answer for an empty root.
 

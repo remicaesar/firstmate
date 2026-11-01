@@ -4538,13 +4538,26 @@ if [ "$KIND" != secondmate ]; then
     fi
     ;;
   esac
+  # A raw claude command never passes through the launch template, so its
+  # hooks can only reach it through the worktree's .claude/settings.local.json,
+  # which Claude loads whatever the command line says. When the project tracks
+  # that file, writing it would dirty the tree, so the raw launch runs unwired
+  # and unarmed: a busy record armed without hooks could never clear.
+  CLAUDE_RAW_LOCAL_HOOKS=0
   case "$HARNESS" in
   claude*)
-    # A raw claude command never passes through the launch template, so the
-    # --settings file carrying the hooks would never load and a busy record
-    # armed here could never clear. It stays unarmed and unwired, like a raw
-    # gemini or devin launch.
-    if [ "$RAW_LAUNCH" -eq 0 ]; then
+    if [ "$RAW_LAUNCH" -eq 1 ]; then
+      if [ -n "$(git -C "$WT" ls-files -- .claude/settings.local.json 2>/dev/null)" ]; then
+        echo "warning: $WT tracks .claude/settings.local.json, so this raw claude launch for $ID runs without firstmate's turn-end and busy hooks; use the claude adapter to keep them" >&2
+      else
+        CLAUDE_RAW_LOCAL_HOOKS=1
+      fi
+    fi
+    ;;
+  esac
+  case "$HARNESS" in
+  claude*)
+    if [ "$RAW_LAUNCH" -eq 0 ] || [ "$CLAUDE_RAW_LOCAL_HOOKS" -eq 1 ]; then
       BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
         echo "error: failed to arm the busy-state contract for $ID" >&2
         exit 1
@@ -4597,18 +4610,27 @@ if [ "$KIND" != secondmate ]; then
     # there. Hook arrays MERGE across Claude's settings sources (verified
     # 2.1.316: a --settings file's hooks and a tracked settings.local.json's
     # hooks both fired), so a project's own hooks still run alongside these.
-    if [ "$RAW_LAUNCH" -eq 0 ]; then
+    # A raw launch whose worktree does not track that file keeps the hooks
+    # there, as every claude spawn once did.
+    if [ -n "$BUSY_GEN" ]; then
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source claude-hook"
       j_submit=$(json_escape "$busy_cmd_prefix busy $busy_suffix --event user-prompt-submit 2>/dev/null || true")
       j_stop=$(json_escape "touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event stop 2>/dev/null || true")
       j_stopfail=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event stop-failure 2>/dev/null || true")
       j_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end 2>/dev/null || true")
-      CLAUDE_SETTINGS_FILE="$STATE_REAL/$ID.claude-settings.json"
-      claude_settings_json ',"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"'"$j_submit"'"}]}],"Stop":[{"hooks":[{"type":"command","command":"'"$j_stop"'"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"'"$j_stopfail"'"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"'"$j_sessionend"'"}]}]}' >"$CLAUDE_SETTINGS_FILE" || {
-        echo "error: could not write claude settings for $ID" >&2
-        exit 1
-      }
+      claude_hooks='"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"'"$j_submit"'"}]}],"Stop":[{"hooks":[{"type":"command","command":"'"$j_stop"'"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"'"$j_stopfail"'"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"'"$j_sessionend"'"}]}]}'
+      if [ "$RAW_LAUNCH" -eq 0 ]; then
+        CLAUDE_SETTINGS_FILE="$STATE_REAL/$ID.claude-settings.json"
+        claude_settings_json ",$claude_hooks" >"$CLAUDE_SETTINGS_FILE" || {
+          echo "error: could not write claude settings for $ID" >&2
+          exit 1
+        }
+      else
+        mkdir -p "$WT/.claude"
+        printf '{%s}\n' "$claude_hooks" >"$WT/.claude/settings.local.json"
+        exclude_path '.claude/settings.local.json'
+      fi
     fi
     ;;
   devin)
