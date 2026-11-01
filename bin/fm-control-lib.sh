@@ -376,7 +376,11 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
   local harness=${1-} wt=${2-} state=${3-} id=${4-}
   [ -n "$wt" ] && [ -n "$state" ] && [ -n "$id" ] || return 1
   case "$harness" in
-    claude) printf '%s\n' "$wt/.claude/settings.local.json" ;;
+    # claude's busy-state and turn-end hooks live in the firstmate-owned
+    # settings file its launch reaches through --settings; the worktree's
+    # .claude/settings.local.json may be the project's own tracked file
+    # (fm_control_retire_legacy_claude_hook retires an older spawn's copy).
+    claude) printf '%s\n' "$state/$id.claude-settings.json" ;;
     opencode) printf '%s\n' "$wt/.opencode/plugins/fm-busy-state.js" ;;
     pi|pi-signed) printf '%s\n' "$state/$id.pi-ext.ts" ;;
     omp) printf '%s\n' "$state/$id.omp-ext.ts" ;;
@@ -405,6 +409,22 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
   esac
+}
+
+# Earlier claude spawns wrote their hooks into <worktree>/.claude/settings.local.json.
+# Remove that file only when git does not track it there, so an older spawn's
+# hook is retired while a project's own tracked file is never deleted. A file
+# whose tracked status cannot be read is left alone.
+fm_control_retire_legacy_claude_hook() {  # <worktree>
+  local wt=${1-} hook tracked
+  [ -n "$wt" ] || return 1
+  hook="$wt/.claude/settings.local.json"
+  [ -e "$hook" ] || [ -L "$hook" ] || return 0
+  if git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    tracked=$(git -C "$wt" ls-files -- .claude/settings.local.json 2>/dev/null) || return 0
+    [ -z "$tracked" ] || return 0
+  fi
+  rm -f -- "$hook"
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.

@@ -508,6 +508,28 @@ The lab home was deleted and the test entry was removed from the store and verif
 That automated spawn case runs against a fake claude, so it asserts the store entry and the launch command and nothing more; the live arms above are what establish that the entry actually suppresses the dialog.
 The composer-classification record below observes the same gate from the other side, where an untrusted worktree left Claude, Grok, and Muse unverified because the guard reads a first-launch trust dialog as an unreadable composer.
 
+## Claude worker settings file
+
+Verified 2026-11-01 on Claude Code 2.1.316.
+A ship or scout claude launch carries its busy-state and turn-end hooks in a firstmate-owned `state/<id>.claude-settings.json` passed through `--settings`, never in the worktree's `.claude/settings.local.json`, because a project may track that file and a rewrite dirties the tree.
+Two facts support that shape, both observed in a scratch repo that tracks a `.claude/settings.local.json` carrying its own `Stop` hook.
+
+Hooks merge across settings sources.
+An interactive session started under a pseudo-terminal as `claude --model haiku --dangerously-skip-permissions --settings <file> 'Reply with just: ok'`, in a git worktree trusted through `bin/fm-claude-trust.sh`, fired the file's `UserPromptSubmit` and `Stop` hooks and the project's `Stop` hook, and `git status --porcelain` stayed empty:
+
+```text
+fm-stop
+fm-ups
+project-stop
+```
+
+The same run in print mode (`claude -p`) also fired the file's `SessionEnd` hook.
+
+Only the last `--settings` flag applies.
+`claude -p --settings '<inline json with a Stop hook>' --settings <file> ...` fired the file's hooks and the project's, but not the inline one, so the feedback-draft and attribution settings must ride the same file as the hooks.
+
+`tests/fm-busy-adapter-wiring.test.sh` pins the spawn side against a fake claude: a tracked `.claude/settings.local.json` stays byte-identical, the worktree stays clean, and the relocated `Stop` hook still touches the turn-end marker.
+
 ## Claude scratchpad root
 
 Verified 2026-10-27 on Claude Code 2.1.311, from its bundled source and from a live crewmate.
@@ -1092,7 +1114,7 @@ The credential must also be present before the session-provider daemon starts, s
 
 ### Settings placement
 
-Firstmate's hooks are NOT written into the worktree's `.gemini/settings.json`, because unlike Claude's `settings.local.json` that path is the project's own committed settings file.
+Firstmate's hooks are NOT written into the worktree's `.gemini/settings.json`, because that path is the project's own committed settings file.
 They go to a firstmate-owned `state/<id>.gemini-settings.json` reached through `GEMINI_CLI_SYSTEM_SETTINGS_PATH`.
 Two measurements support that choice.
 Hooks from the system layer fired under `--skip-trust` in an untrusted folder, so the busy contract does not depend on the trust decision:
