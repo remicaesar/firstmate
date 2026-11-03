@@ -6331,27 +6331,31 @@ BUSY_GEN=
     fi
     ;;
   esac
-  # A raw claude command never passes through the launch template, so a raw
-  # ship or scout's hooks can only reach it through the worktree's
-  # .claude/settings.local.json, which Claude loads whatever the command line
-  # says. When the project tracks that file, writing it would dirty the tree,
-  # so the raw launch runs unwired and unarmed: a busy record armed without
-  # hooks could never clear. A raw secondmate launch is already unwired above.
-  CLAUDE_RAW_LOCAL_HOOKS=0
+  # A raw claude command never passes through the launch template, and T3 Code
+  # starts a ship or scout's claude itself, so neither launch carries the
+  # --settings flag; their hooks can only reach the agent through the
+  # worktree's .claude/settings.local.json, which Claude loads whatever the
+  # command line says. When the project tracks that file, writing it would
+  # dirty the tree, so such a launch runs unwired and unarmed: a busy record
+  # armed without hooks could never clear. A raw secondmate launch is already
+  # unwired above.
+  CLAUDE_LAUNCH_SETTINGS=1
+  CLAUDE_LOCAL_HOOKS=0
   case "$WIRING_HARNESS" in
   claude*)
-    if [ "$RAW_LAUNCH" -eq 1 ]; then
+    if [ "$RAW_LAUNCH" -eq 1 ] || { [ "$BACKEND" = t3code ] && [ "$KIND" != secondmate ]; }; then
+      CLAUDE_LAUNCH_SETTINGS=0
       if [ -n "$(git -C "$WT" ls-files -- .claude/settings.local.json 2>/dev/null)" ]; then
-        echo "warning: $WT tracks .claude/settings.local.json, so this raw claude launch for $ID runs without firstmate's turn-end and busy hooks; use the claude adapter to keep them" >&2
+        echo "warning: $WT tracks .claude/settings.local.json, so this claude launch for $ID, which carries no --settings flag, runs without firstmate's turn-end and busy hooks; use the claude adapter on a launch-template backend to keep them" >&2
       else
-        CLAUDE_RAW_LOCAL_HOOKS=1
+        CLAUDE_LOCAL_HOOKS=1
       fi
     fi
     ;;
   esac
   case "$WIRING_HARNESS" in
   claude*)
-    if [ "$RAW_LAUNCH" -eq 0 ] || [ "$CLAUDE_RAW_LOCAL_HOOKS" -eq 1 ]; then
+    if [ "$CLAUDE_LAUNCH_SETTINGS" -eq 1 ] || [ "$CLAUDE_LOCAL_HOOKS" -eq 1 ]; then
       BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
         echo "error: failed to arm the busy-state contract for $ID" >&2
         exit 1
@@ -6418,8 +6422,8 @@ BUSY_GEN=
     # settings.local.json's hooks both fired) and keeps any key the flag omits
     # (https://code.claude.com/docs/en/cli-reference), so a project's own hooks,
     # a home's tracked Stop guard, and its settings.local.json all stay.
-    # A raw ship or scout launch whose worktree does not track that file keeps
-    # the hooks there, as every claude spawn once did.
+    # A raw or T3 Code ship or scout launch, which carries no --settings flag,
+    # keeps the hooks in that file when the worktree does not track it.
     if [ -n "$BUSY_GEN" ]; then
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source claude-hook"
@@ -6444,7 +6448,7 @@ BUSY_GEN=
         stop_entry="\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_stop\"}]}],"
       fi
       hooks_json="\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_submit\"}]}],${stop_entry}\"StopFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_stopfail\"}]}],\"SessionEnd\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_sessionend\"}]}]}"
-      if [ "$RAW_LAUNCH" -eq 0 ]; then
+      if [ "$CLAUDE_LOCAL_HOOKS" -eq 0 ]; then
         CLAUDE_SETTINGS_FILE="$STATE_REAL/$ID.claude-settings.json"
         claude_settings_json ",$hooks_json" >"$CLAUDE_SETTINGS_FILE" || {
           echo "error: could not write claude settings for $ID" >&2
