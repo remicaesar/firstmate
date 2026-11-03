@@ -290,8 +290,9 @@ expect_dir "$REMOTE_ROOT/bin"
 if [ -d "$ACCOUNT_HOME/.local/bin" ] && [ ! -L "$ACCOUNT_HOME/.local/bin" ]; then
   expect_dir "$ACCOUNT_HOME/.local/bin"
 fi
-for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
-for candidate in "${DISCOVERED_DIRS[@]}"; do expect_dir "$candidate"; done
+# ${...[@]+...}: stock macOS Bash 3.2 calls an empty array unbound under set -u.
+for candidate in ${NVM_CHILD_DIRS[@]+"${NVM_CHILD_DIRS[@]}"}; do expect_dir "$candidate"; done
+for candidate in ${DISCOVERED_DIRS[@]+"${DISCOVERED_DIRS[@]}"}; do expect_dir "$candidate"; done
 for fixed in /usr/bin /bin /usr/sbin /sbin; do expect_dir "$fixed"; done
 
 [ "$CHILD_PATH" = "$EXPECTED_PATH" ] \
