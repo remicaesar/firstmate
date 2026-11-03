@@ -47,6 +47,10 @@ PATH_PART=$FM_PR_PATH
 OWNER=${PATH_PART%%/*}
 NUMBER=$FM_PR_NUMBER
 ENDPOINT="/repos/$PATH_PART/pulls/$NUMBER"
+# gh addresses github.com unless told otherwise, and every read below carries a
+# repository path rather than the URL, so a GitHub Enterprise host is exported
+# once here for the whole run.
+fm_pr_github_host_export "$FM_PR_HOST"
 CORE=$(fm_pr_gh_as "$OWNER" gh api "$ENDPOINT" --jq '"author=\(.user.login)", "base=\(.base.sha)"') \
   || die "could not read $URL"
 AUTHOR=
