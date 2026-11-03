@@ -20,7 +20,8 @@
 # written to a file, or passed as an argument.
 #
 # The mapping is opt-in: with no file, every command runs exactly as before. An
-# owner the file does not name also runs unchanged on the active login. A
+# owner the file does not name also runs unchanged on the active login, and so
+# does any command whose GH_HOST names a host other than github.com. A
 # present file must parse in full and a mapped login must yield a stored token;
 # otherwise the command is refused with a reason naming the file, and nothing
 # falls back to the active login, which could only answer "not found".
@@ -125,6 +126,16 @@ fm_gh_as() {
   local owner=$1 login rc=0 token xtrace=''
   shift
   FM_GH_AS_REFUSED=0
+  # The mapping names github.com logins only, so a command bound for a GitHub
+  # Enterprise host in GH_HOST (bin/fm-pr-lib.sh fm_pr_github_host_export)
+  # runs unchanged rather than with a github.com token.
+  case ${GH_HOST:-$FM_GH_ACCOUNT_HOST} in
+    "$FM_GH_ACCOUNT_HOST") ;;
+    *)
+      "$@"
+      return
+      ;;
+  esac
   login=$(fm_gh_account_login "$owner") || rc=$?
   case "$rc" in
     0) ;;

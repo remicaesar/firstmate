@@ -290,8 +290,9 @@ expect_dir "$REMOTE_ROOT/bin"
 if [ -d "$ACCOUNT_HOME/.local/bin" ] && [ ! -L "$ACCOUNT_HOME/.local/bin" ]; then
   expect_dir "$ACCOUNT_HOME/.local/bin"
 fi
-for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
-for candidate in "${DISCOVERED_DIRS[@]}"; do expect_dir "$candidate"; done
+# ${...[@]+...}: stock macOS Bash 3.2 calls an empty array unbound under set -u.
+for candidate in ${NVM_CHILD_DIRS[@]+"${NVM_CHILD_DIRS[@]}"}; do expect_dir "$candidate"; done
+for candidate in ${DISCOVERED_DIRS[@]+"${DISCOVERED_DIRS[@]}"}; do expect_dir "$candidate"; done
 for fixed in /usr/bin /bin /usr/sbin /sbin; do expect_dir "$fixed"; done
 
 [ "$CHILD_PATH" = "$EXPECTED_PATH" ] \
@@ -364,8 +365,10 @@ cat > "$DOCTOR_BIN/uname" <<'SH'
 printf 'Linux\n'
 SH
 chmod +x "$DOCTOR_BIN/uname"
+# These tool-resolution assertions require Herdr specifically; the unqualified
+# doctor accepts either remote backend, covered by fm-remote-doctor.test.sh.
 set +e
-out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROOT/bin/fm-remote-doctor.sh" 2>&1)
+out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROOT/bin/fm-remote-doctor.sh" --backend herdr 2>&1)
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "the remote doctor passed with a missing required tool"
@@ -391,7 +394,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/treehouse"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/claude"
 chmod +x "$DOCTOR_BIN/jq" "$DOCTOR_BIN/herdr" "$DOCTOR_BIN/tasks-axi" "$DOCTOR_BIN/treehouse" "$DOCTOR_BIN/claude"
 set +e
-out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROOT/bin/fm-remote-doctor.sh" 2>&1)
+out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROOT/bin/fm-remote-doctor.sh" --backend herdr 2>&1)
 rc=$?
 set -e
 assert_contains "$out" "required git=$DOCTOR_BIN/git" "the remote doctor did not report where the required tool resolved"

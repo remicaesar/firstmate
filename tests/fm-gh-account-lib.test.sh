@@ -193,11 +193,34 @@ test_pr_state_reads_as_the_mapped_login() {
   pass "fm-pr-state.sh reads as the mapped login and is unchanged without a mapping"
 }
 
+# The mapping names github.com logins only: a command whose GH_HOST names a
+# GitHub Enterprise host, as fm-pr-lib exports for a configured enterprise PR,
+# runs unchanged on that host instead of carrying a github.com token there.
+test_enterprise_host_runs_unchanged() {
+  local home out
+  home=$(new_home enterprise-lib 'o alt')
+  out=$(in_home "$home" 'GH_HOST=ghe.example.com fm_gh_as o gh api repos/o/r; printf "rc=%s refused=%s\n" "$?" "$FM_GH_AS_REFUSED"' 2>&1) \
+    || fail "an enterprise-host command failed: $out"
+  assert_contains "$out" 'rc=0 refused=0' "an enterprise-host command did not run unchanged"
+  assert_grep 'none api repos/o/r' "$home/gh.log" "an enterprise-host command carried a github.com token"
+  assert_no_grep 'auth token' "$home/gh.log" "an enterprise-host command looked up a github.com token"
+
+  home=$(new_home enterprise-pr-state 'o alt')
+  printf 'ghe.example.com\n' > "$home/config/github-hosts"
+  out=$(FM_HOME="$home" FM_TEST_GH_LOG="$home/gh.log" FM_TEST_SIGNED_IN=alt PATH="$FAKEBIN:$BASE_PATH" \
+    "$ROOT/bin/fm-pr-state.sh" https://ghe.example.com/o/r/pull/7 2>&1) || fail "fm-pr-state.sh failed on an enterprise PR: $out"
+  assert_grep 'none pr view https://ghe.example.com/o/r/pull/7' "$home/gh.log" \
+    "fm-pr-state.sh sent a github.com token to an enterprise host"
+  assert_no_grep 'auth token' "$home/gh.log" "fm-pr-state.sh looked up a github.com token for an enterprise PR"
+  assert_no_token_in "enterprise pr-state" "$out"
+  pass "a command bound for a GitHub Enterprise host runs unchanged, with no github.com token"
+}
+
 failures=0
 for test_name in test_mapped_owner_runs_as_its_login test_unmapped_owner_and_absent_file_are_unchanged \
   test_mapped_status_and_ambient_token_handling test_signed_out_login_refuses_without_fallback \
   test_malformed_mapping_refuses_every_owner test_config_override_and_xtrace_keep_the_token_private \
-  test_owner_from_remote_forms test_pr_state_reads_as_the_mapped_login; do
+  test_owner_from_remote_forms test_pr_state_reads_as_the_mapped_login test_enterprise_host_runs_unchanged; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures GitHub account selection regressions"

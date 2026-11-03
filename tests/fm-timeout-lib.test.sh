@@ -3,9 +3,10 @@
 # TERM to the command's process group at the bound, KILL once the grace has
 # passed, a forwarded signal, the caller replaced rather than wrapped, and a
 # refusal instead of an unbounded run when nothing on the host can enforce the
-# bound. Most cases pin the perl watchdog, the preferred mechanism and the only
-# one a stock macOS host has, under a PATH that holds no timeout variant; the
-# GNU fallback case runs only where a real timeout exists.
+# bound. Most cases pin the preferred perl watchdog under a PATH that holds no
+# timeout variant. Piped stdin exercises every mechanism, with a passthrough
+# timeout stub when the external executable is absent; deadline cases use real
+# watchdogs.
 # shellcheck disable=SC2016 # each bounded bash -c script expands its own arguments
 set -u
 
@@ -59,6 +60,54 @@ wait_for_file() {  # <path>
   done
 }
 
+# Cover both inherited pipe input and a function inside a pipeline: stock
+# macOS Bash cannot enable job control in the latter, unlike newer Bash.
+test_run_timed_preserves_piped_stdin() {
+  local mechanism dir tool runner shape out
+  for mechanism in timeout gtimeout perl bash; do
+    dir="$TMP_ROOT/stdin-$mechanism"
+    mkdir -p "$dir/bin"
+    for tool in bash cat mktemp rm sleep; do
+      ln -s "$(command -v "$tool")" "$dir/bin/$tool"
+    done
+    case "$mechanism" in
+      timeout|gtimeout)
+        runner=$(type -P "$mechanism" 2>/dev/null || true)
+        if [ -n "$runner" ]; then
+          ln -s "$runner" "$dir/bin/$mechanism"
+        else
+          printf '#!/bin/sh\nshift 3\nexec "$@"\n' > "$dir/bin/$mechanism"
+          chmod +x "$dir/bin/$mechanism"
+        fi
+        ;;
+      perl)
+        if ! command -v perl >/dev/null 2>&1; then
+          pass 'fm_run_timed piped stdin (skipped: no perl on this host)'
+          continue
+        fi
+        ln -s "$(command -v perl)" "$dir/bin/perl"
+        ;;
+    esac
+    printf 'hello\nsecond line\twith spaces\r\n\000last bytes\n\n' > "$dir/expected"
+    for shape in inherited pipeline; do
+      out=$(cat "$dir/expected" | PATH="$dir/bin" bash -c '
+        unset FM_TIMEOUT_MECHANISM_OVERRIDE
+        . "$1/bin/fm-timeout-lib.sh"
+        read_timed() { fm_run_timed 5 cat; }
+        fm_timeout_mechanism
+        if [ "$3" = pipeline ]; then
+          cat "$2/expected" | read_timed > "$2/actual"
+        else
+          read_timed > "$2/actual"
+        fi
+      ' _ "$ROOT" "$dir" "$shape") || fail "$mechanism failed to read $shape pipe stdin"
+      [ "$out" = "$mechanism" ] || fail "stdin case selected $out instead of $mechanism"
+      cmp -s "$dir/expected" "$dir/actual" || fail "$mechanism lost or changed $shape pipe stdin"
+      pass "fm_run_timed preserves exact $shape pipe stdin through $mechanism"
+    done
+  done
+}
+
 test_passes_the_command_status_and_output_through() {
   local out rc=0
   out=$(exec_timed "$PERL_ONLY" 5 1 bash -c 'echo to-stdout; echo to-stderr >&2; exit 7' 2>&1) || rc=$?
@@ -66,6 +115,35 @@ test_passes_the_command_status_and_output_through() {
   assert_contains "$out" "to-stdout" "the watchdog lost the command's stdout"
   assert_contains "$out" "to-stderr" "the watchdog lost the command's stderr"
   pass "fm_exec_timed passes a command's status and output through unchanged"
+}
+
+# Exercise the installed system Bash explicitly, including stock macOS 3.2:
+# neither a top-level call nor a subshell may abort before starting its command.
+# Unset BASHPID so newer system Bash also covers the missing-variable case.
+test_system_bash_preserves_completion_and_signal_statuses() {
+  local mode status command out rc
+  for mode in top-level subshell; do
+    for status in 0 7 137 143; do
+      case "$status" in
+        137) command='echo ran; kill -KILL $$' ;;
+        143) command='echo ran; kill -TERM $$' ;;
+        *) command="echo ran; exit $status" ;;
+      esac
+      rc=0
+      out=$(PATH=$PERL_ONLY /bin/bash -c '
+        . "$1/bin/fm-timeout-lib.sh"
+        unset BASHPID
+        if [ "$2" = subshell ]; then
+          ( fm_exec_timed 5 1 bash -c "$3" )
+        else
+          fm_exec_timed 5 1 bash -c "$3"
+        fi
+      ' _ "$ROOT" "$mode" "$command" 2>&1) || rc=$?
+      [ "$rc" -eq "$status" ] || fail "system Bash $mode lost command status $status (rc=$rc: $out)"
+      [ "$out" = ran ] || fail "system Bash $mode did not run the command cleanly: $out"
+    done
+  done
+  pass "system Bash top-level and subshell calls preserve success, failure, and signal status"
 }
 
 # A command that honors TERM ends at the bound, long before the grace would
@@ -113,7 +191,7 @@ test_the_bound_replaces_the_calling_shell() {
     rm -f "$dir/caller" "$dir/parent"
     (
       . "$ROOT/bin/fm-timeout-lib.sh"
-      perl -le 'print getppid' > "$dir/caller"
+      perl -e 'print getppid(), "\n"' > "$dir/caller"
       PATH=$path fm_exec_timed 5 1 bash -c 'echo "$PPID" > "$1"' _ "$dir/parent"
     ) || fail "the bounded probe failed under PATH=$path"
     caller=$(cat "$dir/caller")
@@ -208,16 +286,16 @@ test_a_named_owner_that_is_gone_ends_the_command() {
 # fm_exec_timed - the watchdog then starts already reparented - is still
 # detected instead of leaving the command running to its bound.
 test_an_owner_that_dies_during_startup_ends_the_command() {
-  local dir watchdog started
+  local dir watchdog started pid
   dir="$TMP_ROOT/startup-owner"
   mkdir -p "$dir"
   # shellcheck disable=SC2016
   PATH=$PERL_ONLY bash -c '
     . "$1/bin/fm-timeout-lib.sh"
     (
-      perl -le "print getppid" > "$2/watchdog"
+      perl -e "print getppid(), qq(\\n)" > "$2/watchdog"
       while kill -0 "$$" 2>/dev/null; do sleep 0.05; done
-      fm_exec_timed 60 1 bash -c "exec sleep 300"
+      fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
     ) >/dev/null 2>&1 &
     exit 0
   ' _ "$ROOT" "$dir"
@@ -226,6 +304,10 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
   started=$SECONDS
   while kill -0 "$watchdog" 2>/dev/null; do
     if [ "$((SECONDS - started))" -ge 15 ]; then
+      if [ -s "$dir/pid" ]; then
+        pid=$(cat "$dir/pid")
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
       kill -KILL "$watchdog" 2>/dev/null || true
       fail "a watchdog whose owner died during startup ran on toward its bound"
     fi
@@ -284,6 +366,40 @@ test_a_direct_caller_whose_parent_dies_during_startup_ends_the_command() {
     ! kill -0 "$(cat "$dir/pid")" 2>/dev/null || fail "the bounded command outlived the direct caller's parent"
   fi
   pass "fm_exec_timed ends a direct caller's command when its parent dies during watchdog startup"
+}
+
+# A top-level calling shell has its own PID in $$, unlike a Bash subshell.
+# Capture its parent before exec: that parent can exit while the top-level
+# shell is still on its way into the watchdog.
+test_a_top_level_parent_that_dies_during_startup_ends_the_command() {
+  local dir watchdog started pid
+  dir="$TMP_ROOT/top-level-parent"
+  mkdir -p "$dir"
+  PATH=$PERL_ONLY bash -c '
+    bash -c '\''
+      . "$1/bin/fm-timeout-lib.sh"
+      echo "$$" > "$2/watchdog"
+      while kill -0 "$PPID" 2>/dev/null; do sleep 0.05; done
+      fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
+    '\'' _ "$1" "$2" >/dev/null 2>&1 &
+    while [ ! -s "$2/watchdog" ]; do sleep 0.02; done
+    exit 0
+  ' _ "$ROOT" "$dir"
+  wait_for_file "$dir/watchdog"
+  watchdog=$(cat "$dir/watchdog")
+  started=$SECONDS
+  while kill -0 "$watchdog" 2>/dev/null; do
+    if [ "$((SECONDS - started))" -ge 15 ]; then
+      if [ -s "$dir/pid" ]; then
+        pid=$(cat "$dir/pid")
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
+      kill -KILL "$watchdog" 2>/dev/null || true
+      fail "top-level watchdog lost its pre-exec parent and ran toward its bound"
+    fi
+    sleep 0.02
+  done
+  pass "fm_exec_timed preserves a top-level shell's parent across exec startup"
 }
 
 # perl is preferred whenever it exists, because only its watchdog can reap a
@@ -383,6 +499,28 @@ test_run_timed_passes_a_natural_exit_through_a_fired_bound() {
   pass 'fm_run_timed passes a natural exit through when the bound fired after completion'
 }
 
+# An omp shell defines timeout as a builtin, and a function of that name is
+# ahead of both the builtin and the executable. command -v reports the name
+# and a bare call runs the shadow, which drops the command's stdout and
+# replaces its status. gtimeout is shadowed the same way, so a host whose
+# external runner is gtimeout is covered without installing one.
+test_run_timed_keeps_stdout_and_nonzero_status_when_a_function_shadows_timeout() {
+  local out rc=0
+  # The functions live in this subshell so they cannot leak into later cases.
+  out=$(
+    unset FM_TIMEOUT_MECHANISM_OVERRIDE
+    # shellcheck disable=SC2329 # Steal a bare timeout invocation; the runner must not call it.
+    timeout() { echo shadowed-timeout; return 0; }
+    # shellcheck disable=SC2329 # Steal a bare gtimeout invocation; the runner must not call it.
+    gtimeout() { echo shadowed-gtimeout; return 0; }
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    fm_run_timed 5 bash -c 'echo hello-stdout; exit 7'
+  ) || rc=$?
+  [ "$rc" -eq 7 ] || fail "a function shadowing timeout changed the command status (rc=$rc out=$out)"
+  [ "$out" = hello-stdout ] || fail "a function shadowing timeout changed the command stdout (rc=$rc out=$out)"
+  pass "fm_run_timed keeps stdout and nonzero status when a function shadows timeout"
+}
+
 # CI's stock macOS Bash lane sets FM_TEST_ONLY to run just the bash 3.2 cases.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   for only in $FM_TEST_ONLY; do
@@ -391,9 +529,12 @@ if [ -n "${FM_TEST_ONLY:-}" ]; then
   exit 0
 fi
 
+test_run_timed_preserves_piped_stdin
 test_passes_the_command_status_and_output_through
+test_system_bash_preserves_completion_and_signal_statuses
 test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death
 test_run_timed_passes_a_natural_exit_through_a_fired_bound
+test_run_timed_keeps_stdout_and_nonzero_status_when_a_function_shadows_timeout
 test_term_ends_a_cooperative_command_at_the_bound
 test_kill_ends_a_term_ignoring_command_after_the_grace
 test_the_bound_replaces_the_calling_shell
@@ -403,6 +544,7 @@ test_a_named_owner_that_is_gone_ends_the_command
 test_an_owner_that_dies_during_startup_ends_the_command
 test_a_direct_call_under_set_u_runs_the_command
 test_a_direct_caller_whose_parent_dies_during_startup_ends_the_command
+test_a_top_level_parent_that_dies_during_startup_ends_the_command
 test_perl_is_preferred_over_timeout
 test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
