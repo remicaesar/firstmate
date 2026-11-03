@@ -561,7 +561,7 @@ The composer-classification record below observes the same gate from the other s
 ## Claude worker settings file
 
 Verified 2026-11-01 on Claude Code 2.1.316.
-A ship or scout claude launch carries its busy-state and turn-end hooks in a firstmate-owned `state/<id>.claude-settings.json` passed through `--settings`, never in the worktree's `.claude/settings.local.json`, because a project may track that file and a rewrite dirties the tree.
+A ship or scout claude adapter launch carries its busy-state and turn-end hooks in a firstmate-owned `state/<id>.claude-settings.json` passed through `--settings`, not in the worktree's `.claude/settings.local.json`, because a project may track that file and a rewrite dirties the tree; a raw or T3 Code launch, which carries no `--settings` flag, is covered in [`configuration.md`](../configuration.md#launch-scope-and-sign-in-checks).
 Two facts support that shape, both observed in a scratch repo that tracks a `.claude/settings.local.json` carrying its own `Stop` hook.
 
 Hooks merge across settings sources.

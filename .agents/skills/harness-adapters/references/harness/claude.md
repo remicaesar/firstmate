@@ -86,7 +86,7 @@ Put either in user settings or the untracked `.claude/settings.local.json`, neve
 ## Primary integration
 
 [`../../../../../docs/verification/supervision.md`](../../../../../docs/verification/supervision.md#turn-end-guard) records the current primary and Stop auto-arm live evidence.
-This differs from the worker hooks, which every ship, scout, or secondmate launch carries in a firstmate-owned `state/<id>.claude-settings.json` through its single `--settings` flag, never in the launch directory's `.claude/settings.local.json`, which a project may track and which a secondmate home keeps for the captain.
+This differs from the worker hooks, which an adapter ship, scout, or secondmate launch carries in a firstmate-owned `state/<id>.claude-settings.json` through its single `--settings` flag rather than in the launch directory's `.claude/settings.local.json`, which a project may track and which a secondmate home keeps for the captain; a raw Claude command or a T3 Code ship or scout carries no `--settings` flag, so [`configuration.md`](../../../../../docs/configuration.md#launch-scope-and-sign-in-checks) owns where its hooks go instead.
 
 Primary `.claude/settings.json` registers `../../../bin/fm-turnend-guard.sh --claude` and `../../../bin/fm-claude-stop-autoarm.sh` with `asyncRewake: true` and `timeout: 28800`.
 Guard exit 2 plus stderr forces continuation.
