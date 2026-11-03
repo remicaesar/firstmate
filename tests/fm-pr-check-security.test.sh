@@ -806,6 +806,28 @@ test_mapped_owner_arms_polls_and_merges_as_its_login() {
   [ -z "$offending" ] || fail "a mapped read ran on another login:"$'\n'"$offending"
   assert_no_gh_token_leak "$dir" "mapped arming and poll"
 
+  dir=$(make_case gh-account-enterprise-poll)
+  write_task_meta "$dir" "$id"
+  printf 'leadsonline.ghe.com\n' > "$dir/home/config/github-hosts"
+  printf 'Org alt\n' > "$dir/home/config/gh-accounts"
+  : > "$dir/gh-token.log"
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_HEAD=$expected \
+    run_check_entry "$dir" "$id" https://leadsonline.ghe.com/Org/repo/pull/7 > "$dir/check.out" 2> "$dir/check.err" \
+    || fail "mapped enterprise arming failed: $(cat "$dir/check.err")"
+  : > "$dir/gh-token.log"
+  set +e
+  FM_TEST_GH_TOKEN_LOG="$dir/gh-token.log" FM_TEST_GH_STATE=MERGED \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "mapped enterprise watcher did not complete (rc=$rc): $(cat "$dir/watch.err")"
+  grep -q '^check: .*: merged$' "$dir/watch.out" || fail "the mapped enterprise poll never saw the merge"
+  grep -q '^gh none pr view https://leadsonline.ghe.com/Org/repo/pull/7 ' "$dir/gh-token.log" \
+    || fail "the enterprise poll did not read without a token:"$'\n'"$(cat "$dir/gh-token.log")"
+  assert_no_grep 'fake-token-for-' "$dir/gh-token.log" "the enterprise poll carried a github.com token"
+  assert_no_grep 'auth token' "$dir/gh-token.log" "the enterprise poll looked up a github.com token"
+  assert_no_gh_token_leak "$dir" "mapped enterprise poll"
+
   dir=$(make_case gh-account-merge)
   write_task_meta "$dir"
   printf 'my-org alt\n' > "$dir/home/config/gh-accounts"

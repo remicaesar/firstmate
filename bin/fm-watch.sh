@@ -4048,7 +4048,7 @@ while :; do
             # (bin/fm-gh-account-lib.sh). The poll's own bytes stay fixed, so
             # the login reaches it only through this call's environment. A
             # mapping that cannot be used reads nothing, as a failed lookup does.
-            fm_pr_gh_as "${path%%/*}" run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
+            GH_HOST=$host fm_pr_gh_as "${path%%/*}" run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
               "$provider" "$url" "$host" "$path" "$number" \
               || { [ "${FM_GH_AS_REFUSED:-0}" = 1 ] || exit 1; FM_CHECK_RESULT=
                 triage_log "PR poll for $id was not read: the gh login mapped for ${path%%/*} cannot be used"; }
