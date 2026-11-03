@@ -1,0 +1,9 @@
+ok - each mapped owner's command runs as that owner's login, matched case-insensitively
+ok - an unmapped owner and an absent mapping run the command exactly as before
+ok - a mapped command keeps its own status and its token stays in that command alone
+ok - a mapped login with no stored token refuses and never falls back to the active login
+ok - a malformed mapping refuses every GitHub command and names the file
+ok - FM_CONFIG_OVERRIDE selects the mapping and a traced caller never prints the token
+ok - a github.com remote or PR URL yields its owner and any other host yields none
+ok - fm-pr-state.sh reads as the mapped login and is unchanged without a mapping
+ok - a command bound for a GitHub Enterprise host runs unchanged, with no github.com token

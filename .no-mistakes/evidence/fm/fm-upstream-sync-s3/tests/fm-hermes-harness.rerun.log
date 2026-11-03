@@ -1,0 +1,2 @@
+ok - an empty Hermes command line and the default profile run under set -u on every Bash
+not ok - NUL argv identity lost when names/ps args are blind

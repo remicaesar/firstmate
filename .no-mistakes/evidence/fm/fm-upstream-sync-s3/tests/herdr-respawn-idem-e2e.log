@@ -1,0 +1,6 @@
+ok - repro setup: two real fm-<id> task tabs exist (crewmate-shaped and secondmate-shaped), neither with a registered agent
+ok - repro confirmed: after a real session restart, both task panes survive alive but with no registered agent - the restored-layout husk
+ok - fixed: create_task closes and replaces the crewmate-shaped restored husk instead of refusing - no manual pane close needed
+ok - fixed: create_task closes and replaces the secondmate-shaped restored husk instead of refusing - same fix, same function, both spawn shapes
+ok - fixed: the workspace holds exactly the 2 replacement tabs after both respawns - no leaked husk tabs, no destroyed workspace
+ok - fixed: a genuinely live duplicate (a real registered agent) still refuses exactly as before - the husk fix never closes a live pane

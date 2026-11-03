@@ -1,0 +1,2 @@
+/tmp/fm-up.rnAWgw/bin/fm-hermes-process-lib.sh: line 6: words[@]: unbound variable
+not ok - NUL argv identity lost when names/ps args are blind
