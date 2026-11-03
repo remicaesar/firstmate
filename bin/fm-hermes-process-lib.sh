@@ -11,7 +11,8 @@ fm_hermes_process_matches() {  # <args> [pid]
   else
     read -r -a words <<< "$args"
   fi
-  for word in "${words[@]}"; do
+  # ${words[@]+...}: stock macOS Bash 3.2 calls an empty array unbound under set -u.
+  for word in ${words[@]+"${words[@]}"}; do
     if [ "$first" = 1 ]; then
       first=0
       case "${word##*/}" in

@@ -33,6 +33,21 @@ done
 for args in 'node /tmp/server.js /opt/hermes-agent/ui-tui/dist/entry.js' 'python3 -c tui_gateway.entry' 'node -e hermes' 'hermes-helper'; do
   ! fm_hermes_process_matches "$args" || fail "false identity: $args"
 done
+# Stock macOS Bash 3.2 treats an empty array as unbound under set -u, so an
+# empty command line (a process ps can no longer read) and the default profile
+# must still return an answer rather than abort the calling shell.
+# shellcheck disable=SC2016  # Each snippet expands inside the shell that sources the library.
+out=$("${BASH:-bash}" -c 'set -u; . "$1"; fm_hermes_process_matches ""; echo "rc=$?"' _ \
+  "$ROOT/bin/fm-hermes-process-lib.sh" 2>&1)
+[ "$out" = rc=1 ] || fail "an empty command line aborted the Hermes matcher on $BASH_VERSION: $out"
+printf '#!/bin/sh\n[ "$*" = "config path" ] && echo /tmp/fm-hermes-default/config.yaml\n' > "$TMP_ROOT/hermes-config-path"
+chmod +x "$TMP_ROOT/hermes-config-path"
+# shellcheck disable=SC2016  # Each snippet expands inside the shell that sources the library.
+out=$("${BASH:-bash}" -c 'set -u; . "$1"; fm_hermes_profile_home "$2" ""' _ \
+  "$ROOT/bin/fm-hermes-lib.sh" "$TMP_ROOT/hermes-config-path" 2>&1)
+[ "$out" = /tmp/fm-hermes-default ] || fail "the default Hermes profile aborted the home lookup on $BASH_VERSION: $out"
+pass 'an empty Hermes command line and the default profile run under set -u on every Bash'
+
 # Use a real interpreter process so kernel-name loss and argv loss are
 # independent regressions, not expectations encoded into a fake harness.
 mkdir -p "$TMP_ROOT/process/tui_gateway"
