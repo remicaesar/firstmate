@@ -1327,7 +1327,7 @@ github_update_behind_branch() {
   local poll=${mergeable_retry_delay:-3} deadline
   deadline=$((SECONDS + poll * 5))
   attempt_error=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-update.XXXXXX") || return 1
-  if ! gh api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/update-branch" \
+  if ! fm_pr_gh_as "$PR_OWNER" gh api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/update-branch" \
     -f "expected_head_sha=$old_head"; then
     rm -f "$attempt_error"
     return 1

@@ -368,7 +368,13 @@ if [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ "$DEGRADED_WATCH_ENABLED" = 1 ]; then
   # The read runs under the control lock the watcher waits on, so it is
   # bounded by the watcher's own check bound.
   BASELINE_RC=0
-  BASELINE=$(fm_run_timed "${FM_CHECK_TIMEOUT:-30}" "$SCRIPT_DIR/fm-pr-poll.sh" --baseline "$PROVIDER" "$URL" "$HOST" "$PROJECT_PATH" "$NUMBER" 2>/dev/null) || BASELINE_RC=$?
+  if [ "$PROVIDER" = github ]; then
+    # A GitHub baseline reads as the gh login mapped for the owner
+    # (bin/fm-gh-account-lib.sh), as the watcher's later polls do.
+    BASELINE=$(fm_pr_gh_as "${PROJECT_PATH%%/*}" fm_run_timed "${FM_CHECK_TIMEOUT:-30}" "$SCRIPT_DIR/fm-pr-poll.sh" --baseline "$PROVIDER" "$URL" "$HOST" "$PROJECT_PATH" "$NUMBER" 2>/dev/null) || BASELINE_RC=$?
+  else
+    BASELINE=$(fm_run_timed "${FM_CHECK_TIMEOUT:-30}" "$SCRIPT_DIR/fm-pr-poll.sh" --baseline "$PROVIDER" "$URL" "$HOST" "$PROJECT_PATH" "$NUMBER" 2>/dev/null) || BASELINE_RC=$?
+  fi
   if [ "$BASELINE_RC" != 0 ] && [ "$BASELINE_RC" != 3 ]; then
     if [ "$BASELINE_RC" = 124 ]; then
       echo "error: baseline read of the PR poll timed out" >&2

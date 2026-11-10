@@ -142,8 +142,9 @@ SH
 printf 'host=%s\n' "${GH_HOST:-}" >> "$FM_TEST_GH_LOG"
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
 # A case that maps an owner in config/gh-accounts logs the GH_TOKEN each call
-# saw; only the login "alt" is signed in, with a token named after it.
-[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh %s %s\n' "${GH_TOKEN:-none}" "$*" >> "$FM_TEST_GH_TOKEN_LOG"
+# saw, one line per call even when an argument spans lines; only the login
+# "alt" is signed in, with a token named after it.
+[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh %s %s\n' "${GH_TOKEN:-none}" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$FM_TEST_GH_TOKEN_LOG"
 if [ "${1:-} ${2:-}" = "auth token" ]; then
   case " $* " in *" --user alt "*) printf 'fake-token-for-alt\n'; exit 0 ;; esac
   exit 1
@@ -231,7 +232,7 @@ SH
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
-[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh-axi %s %s\n' "${GH_TOKEN:-none}" "$*" >> "$FM_TEST_GH_TOKEN_LOG"
+[ -z "${FM_TEST_GH_TOKEN_LOG:-}" ] || printf 'gh-axi %s %s\n' "${GH_TOKEN:-none}" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$FM_TEST_GH_TOKEN_LOG"
 case "${1:-} ${2:-}" in
   "pr view")
     [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
