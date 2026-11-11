@@ -1,0 +1,269 @@
+ok - fm_run_timed perl preserves interruption status during timeout cleanup
+ok - fm_run_timed perl bounds its deadline and cleanup despite wall-clock changes
+ok - fm_run_timed perl reaps owned groups and preserves caller signal dispositions on INT/HUP/TERM and timeout
+[1]+  Interrupt: 2            perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+[1]+  Interrupt: 2            perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+[1]+  Hangup: 1               perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+[1]+  Hangup: 1               perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+[1]+  Terminated: 15          perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+[1]+  Terminated: 15          perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e '
+        my $bound = shift;
+        my ($signal, $kill_at, $result) = (0, 0, 0);
+        for my $entry ([HUP => 1], [INT => 2], [TERM => 15]) {
+          my ($name, $number) = @$entry;
+          $SIG{$name} = sub { $signal ||= $number };
+        }
+        my $pid = fork;
+        exit 127 unless defined $pid;
+        if (!$pid) {
+          $SIG{$_} = "DEFAULT" for qw(INT HUP TERM);
+          setpgid(0, 0);
+          exec @ARGV;
+          exit 127;
+        }
+        # Both sides establish the group before the parent can signal it.
+        setpgid($pid, $pid);
+        my $deadline = clock_gettime(CLOCK_MONOTONIC) + $bound;
+        while (1) {
+          if (!$kill_at && ($signal || clock_gettime(CLOCK_MONOTONIC) >= $deadline)) {
+            $result = $signal ? 128 + $signal : 124;
+            $kill_at = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+            kill "TERM", -$pid;
+          }
+          my $done = waitpid $pid, WNOHANG;
+          if ($done == $pid) {
+            my $status = $?;
+            kill "KILL", -$pid if $kill_at;
+            exit($kill_at ? $result : ($status & 127) ? 128 + ($status & 127) : $status >> 8);
+          }
+          exit 127 if $done == -1;
+          if ($kill_at && clock_gettime(CLOCK_MONOTONIC) >= $kill_at) {
+            kill "KILL", -$pid;
+            waitpid $pid, 0;
+            exit $result;
+          }
+          select undef, undef, undef, 0.02;
+        }
+      ' -- "$seconds" "$@" 0<&0
+ok - fm_run_timed perl cancels before handler installation and preserves caller job control and signal handlers
+ok - fm_run_timed perl preserves stdin, output, completion statuses and caller traps
+ok - fm_run_timed preserves exact inherited pipe stdin through timeout
+ok - fm_run_timed preserves exact pipeline pipe stdin through timeout
+ok - fm_run_timed preserves exact inherited pipe stdin through gtimeout
+ok - fm_run_timed preserves exact pipeline pipe stdin through gtimeout
+ok - fm_run_timed preserves exact inherited pipe stdin through perl
+ok - fm_run_timed preserves exact pipeline pipe stdin through perl
+ok - fm_run_timed preserves exact inherited pipe stdin through bash
+ok - fm_run_timed preserves exact pipeline pipe stdin through bash
+ok - fm_exec_timed passes a command's status and output through unchanged
+ok - system Bash top-level and subshell calls preserve success, failure, and signal status
+_: line 3: 60232 Terminated: 15          "$@"
+ok - fm_run_timed reports 124 when the bound TERMs a read whose wrapper recorded 143
+ok - fm_run_timed passes a natural exit through when the bound fired after completion
+ok - fm_run_timed keeps stdout and nonzero status when a function shadows timeout
+ok - fm_run_timed delivers piped stdin through every available mechanism
+ok - fm_exec_timed sends TERM at the bound and a cooperative command ends there
+ok - fm_exec_timed kills a TERM-ignoring command once the grace has passed
+ok - fm_exec_timed replaces the calling shell instead of wrapping it
+ok - fm_exec_timed reaps a descendant that would otherwise hold the output past the bound
+ok - fm_exec_timed forwards a TERM it receives to the bounded command
+ok - fm_exec_timed ends the command when its named owner is already gone
+ok - fm_exec_timed ends the command when its owner dies during watchdog startup
+ok - fm_exec_timed runs a direct call under set -u on 3.2.57(1)-release
+ok - fm_exec_timed ends a direct caller's command when its parent dies during watchdog startup
+ok - fm_exec_timed preserves a top-level shell's parent across exec startup
+ok - fm_exec_timed prefers its perl watchdog over timeout
+ok - fm_exec_timed refuses instead of running unbounded when no mechanism exists
+ok - fm_exec_timed rejects a zero, padded, non-numeric, or missing bound and a missing command
+ok - fm_exec_timed's GNU timeout fallback (skipped: no timeout binary on this host)
+ok - fm_timed_out accepts 124 and 137 and nothing else

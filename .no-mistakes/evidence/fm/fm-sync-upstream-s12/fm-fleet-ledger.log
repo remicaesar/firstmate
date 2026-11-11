@@ -1,0 +1,11 @@
+ok - flag on: dispatch, polled status lines, the local merge after its task's pending lines, and cleanup are recorded in order
+ok - flag on: a PR merge is recorded once, after the task's pending status lines
+ok - flag on: registering a PR records task.pr_ready with its full URL after the task's pending status lines, and the merge-time re-record adds nothing
+ok - flag on: a worker's status command records its line at once, and the watcher backstop does not record it again
+ok - flag on, state override outside the home: the worker's status command records its line at once
+ok - flag on, relative config override: a worker running elsewhere still records its line at once
+ok - append failing: the worker's status command exits nonzero and records nothing
+ok - ledger failing: the worker's status line still lands exactly, quietly, and the backstop records it later
+ok - flag off: the worker's status command is a plain append and leaves no ledger file, offset, or lock
+ok - the worker status command is a plain && chain of simple commands
+ok - flag off: the whole lifecycle leaves no ledger file, offset, or lock

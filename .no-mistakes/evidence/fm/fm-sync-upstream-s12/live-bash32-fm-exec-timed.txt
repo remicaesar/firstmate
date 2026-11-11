@@ -1,0 +1,5 @@
+$ /bin/bash --version | head -1
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+$ /bin/bash -u -c ". bin/fm-timeout-lib.sh; out=\$( fm_exec_timed 5 1 echo ran-under-bash-3.2 ); ...; ( fm_exec_timed 1 1 sleep 10 ); ..."
+ran-under-bash-3.2 rc=0
+bounded sleep 10 under 1s limit: rc=124 after 1s

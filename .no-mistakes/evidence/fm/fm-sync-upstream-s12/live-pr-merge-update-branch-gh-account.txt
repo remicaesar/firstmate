@@ -1,0 +1,34 @@
+### mapped-update-branch  (config/gh-accounts: example alt)
+$ bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/6181 --update-branch
+exit=0
+--- stdout
+armed: state/task-x1.check.sh
+{"message":"Updating pull request branch."}
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/6181 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+--- stderr
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/6181 is open and mergeable, with every unwaived required check reported and every unwaived check green at head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+verified: https://github.com/example/repo/pull/6181 is open and mergeable, with every unwaived required check reported and every unwaived check green at head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+--- update-branch / merge calls with the token each saw
+GH_TOKEN=tok-alt | gh api --method PUT repos/example/repo/pulls/6181/update-branch -f expected_head_sha=aaaaaaaaaaaaaaaaaa
+GH_TOKEN=tok-alt | gh pr merge 6181 --repo example/repo --match-head-commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --squ
+--- github.com calls not carrying the mapped token (excluding token lookups): 0
+
+### signed-out-update-branch  (config/gh-accounts: example ghost)
+$ bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/6181 --update-branch
+exit=1
+--- stdout
+--- stderr
+error: gh login ghost, mapped for GitHub owner example in /private/var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T/fm-pr-merge-tests.RlpiYp/signed-out-update-branch/home/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+--- update-branch / merge calls with the token each saw
+(none)
+--- github.com calls not carrying the mapped token (excluding token lookups): 0
+

@@ -1,0 +1,55 @@
+### scenario: mapped-owner   (config/gh-accounts: o\ alt\\n)
+$ bin/fm-pr-check.sh task-a https://github.com/O/r/pull/1
+exit=0
+--- stdout
+armed: state/task-a.check.sh
+--- stderr
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+--- gh calls (token each call saw)
+GH_TOKEN=<none> | gh auth token --hostname github.com --user alt
+GH_TOKEN=tok-alt | gh pr view https://github.com/O/r/pull/1 --json isDraft
+GH_TOKEN=<none> | gh auth token --hostname github.com --user alt
+GH_TOKEN=tok-alt | gh pr view https://github.com/O/r/pull/1 --json headRefOid -q .headRefOid
+GH_TOKEN=<none> | gh auth token --hostname github.com --user alt
+GH_TOKEN=tok-alt | gh pr view https://github.com/O/r/pull/1 --json state,headRefOid,statusCheckRollup --jq        if .state == "MERG
+--- state after: poll published? yes; degraded baseline recorded? yes; pr= in meta? 1
+
+### scenario: malformed-mapping   (config/gh-accounts: o\ alt\ extra\\n)
+$ bin/fm-pr-check.sh task-a https://github.com/O/r/pull/1
+exit=1
+--- stdout
+--- stderr
+error: GitHub account mapping /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-live.Ewh85w/malformed-mapping/home/config/gh-accounts line 1 is not "<owner> <login>"
+error: refusing to run pr_check_baseline_read for GitHub owner O on the active gh account while /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-live.Ewh85w/malformed-mapping/home/config/gh-accounts is unusable
+error: baseline read of the PR poll failed
+--- gh calls (token each call saw)
+--- state after: poll published? no; degraded baseline recorded? no; pr= in meta? 0
+
+### scenario: signed-out-login   (config/gh-accounts: o\ ghost\\n)
+$ bin/fm-pr-check.sh task-a https://github.com/O/r/pull/1
+exit=1
+--- stdout
+--- stderr
+error: gh login ghost, mapped for GitHub owner O in /var/folders/3_/cr9j6xr97353sc4rc0tzqrjr0000gn/T//fm-live.Ewh85w/signed-out-login/home/config/gh-accounts, has no stored token for github.com; sign it in with gh auth login rather than switching the active account
+error: baseline read of the PR poll failed
+--- gh calls (token each call saw)
+GH_TOKEN=<none> | gh auth token --hostname github.com --user ghost
+GH_TOKEN=<none> | gh auth token --hostname github.com --user ghost
+GH_TOKEN=<none> | gh auth token --hostname github.com --user ghost
+--- state after: poll published? no; degraded baseline recorded? no; pr= in meta? 0
+
+### scenario: no-mapping   (config/gh-accounts: absent)
+$ bin/fm-pr-check.sh task-a https://github.com/O/r/pull/1
+exit=0
+--- stdout
+armed: state/task-a.check.sh
+--- stderr
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+--- gh calls (token each call saw)
+GH_TOKEN=<none> | gh pr view https://github.com/O/r/pull/1 --json isDraft
+GH_TOKEN=<none> | gh pr view https://github.com/O/r/pull/1 --json headRefOid -q .headRefOid
+GH_TOKEN=<none> | gh pr view https://github.com/O/r/pull/1 --json state,headRefOid,statusCheckRollup --jq        if .state == "MERG
+--- state after: poll published? yes; degraded baseline recorded? yes; pr= in meta? 1
+
